@@ -1,0 +1,138 @@
+@page "/blocks"
+@inject OrchestratorApiClient Api
+@inject ApiSessionState Session
+@inject NavigationManager Nav
+
+<PageTitle>Blocks</PageTitle>
+
+@if (!EnsureAuthenticated())
+{
+}
+else
+{
+    <div class="page-grid">
+        <AppCard Title="Block Metadata">
+            <div class="form-grid">
+                <AppInput Label="Name" Value="@draftName" ValueChanged="@(v => draftName = v ?? string.Empty)" Placeholder="RunProcess" />
+                <AppInput Label="Description" Value="@draftDescription" ValueChanged="@(v => draftDescription = v)" Placeholder="Description" />
+            </div>
+            <label class="field" style="margin-top:.75rem;">
+                <span class="field-label">Schema JSON</span>
+                <textarea class="input mono" @bind="draftSchemaJson"></textarea>
+            </label>
+            <div class="actions-row" style="margin-top:.75rem;">
+                <AppButton Variant="primary" OnClick="SaveBlock">@(editingId is null ? "Create" : "Update")</AppButton>
+                <AppButton Variant="ghost" OnClick="ResetForm">Reset</AppButton>
+                <AppButton Variant="ghost" OnClick="Refresh">Refresh</AppButton>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(error))
+            {
+                <div class="pill pill-error" style="margin-top:.75rem;">@error</div>
+            }
+        </AppCard>
+
+        <AppCard Title="Blocks">
+            @if (blocks.Count == 0)
+            {
+                <EmptyState Title="No blocks" Message="Built-in RunProcess should appear here after login." />
+            }
+            else
+            {
+                <DataTable Items="blocks" RowTemplate="BlockRow">
+                    <HeaderTemplate><tr><th>Name</th><th>Description</th><th>Created</th><th>Actions</th></tr></HeaderTemplate>
+                </DataTable>
+            }
+        </AppCard>
+    </div>
+}
+
+@code {
+    private List<BlockDto> blocks = [];
+    private Guid? editingId;
+    private string draftName = "";
+    private string? draftDescription;
+    private string draftSchemaJson = "{}";
+    private string? error;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            error = null;
+            blocks = await Api.GetBlocksAsync();
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task SaveBlock(MouseEventArgs _)
+    {
+        try
+        {
+            var req = new UpsertBlockRequest { Name = draftName, Description = draftDescription, SchemaJson = draftSchemaJson };
+            if (editingId is null)
+                await Api.CreateBlockAsync(req);
+            else
+                await Api.UpdateBlockAsync(editingId.Value, req);
+
+            ResetFormCore();
+            await LoadAsync();
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private Task ResetForm(MouseEventArgs _)
+    {
+        ResetFormCore();
+        return Task.CompletedTask;
+    }
+
+    private void ResetFormCore()
+    {
+        editingId = null;
+        draftName = "";
+        draftDescription = "";
+        draftSchemaJson = "{}";
+    }
+
+    private async Task Refresh(MouseEventArgs _) => await LoadAsync();
+
+    private RenderFragment<BlockDto> BlockRow => block => @<tr>
+        <td>@block.Name</td>
+        <td>@block.Description</td>
+        <td class="muted small">@block.CreatedAt.ToLocalTime().ToString("g")</td>
+        <td>
+            <div class="actions-row">
+                <AppButton Variant="ghost" OnClick="@(_ => Edit(block))">Edit</AppButton>
+                <AppButton Variant="danger" OnClick="@(_ => Delete(block.Id))">Delete</AppButton>
+            </div>
+        </td>
+    </tr>;
+
+    private Task Edit(BlockDto block)
+    {
+        editingId = block.Id;
+        draftName = block.Name;
+        draftDescription = block.Description;
+        draftSchemaJson = block.SchemaJson;
+        return Task.CompletedTask;
+    }
+
+    private async Task Delete(Guid id)
+    {
+        try
+        {
+            await Api.DeleteBlockAsync(id);
+            await LoadAsync();
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private bool EnsureAuthenticated()
+    {
+        if (Session.IsAuthenticated) return true;
+        Nav.NavigateTo("/login?returnUrl=%2Fblocks", replace: true);
+        return false;
+    }
+}

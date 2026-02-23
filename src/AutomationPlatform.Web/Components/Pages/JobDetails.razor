@@ -1,0 +1,159 @@
+@page "/jobs/{Id:guid}"
+@implements IDisposable
+@inject OrchestratorApiClient Api
+@inject ApiSessionState Session
+@inject MonitoringHubClient HubClient
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Job Details</PageTitle>
+
+@if (!EnsureAuthenticated())
+{
+}
+else if (details is null)
+{
+    <AppCard Title="Job"><div>@(error ?? "Loading...")</div></AppCard>
+}
+else
+{
+    <div class="page-grid">
+        <div class="metrics-grid">
+            <AppCard Title="Status"><div class="kpi-value"><StatusPill Text="@details.Job.Status.ToString()" Tone="@JobTone(details.Job.Status)" /></div></AppCard>
+            <AppCard Title="Flow"><div class="kpi-value" style="font-size:1rem">@details.Job.FlowName</div><div class="muted small">@details.Job.FlowId</div></AppCard>
+            <AppCard Title="Runner"><div class="kpi-value" style="font-size:1rem">@(details.Job.AgentName ?? "Unassigned")</div><div class="muted small">Duration: @(details.Job.DurationMs?.ToString() ?? "-") ms</div></AppCard>
+        </div>
+
+        <div class="split-grid">
+            <AppCard Title="Steps">
+                @if (details.Steps.Count == 0)
+                {
+                    <EmptyState Title="No step records yet" Message="Step records appear once the runner starts the job." />
+                }
+                else
+                {
+                    <DataTable Items="details.Steps" RowTemplate="StepRow">
+                        <HeaderTemplate><tr><th>Node</th><th>Block</th><th>Status</th><th>Exit</th></tr></HeaderTemplate>
+                    </DataTable>
+                }
+            </AppCard>
+
+            <AppCard Title="Live Logs">
+                <div class="row between center-v" style="margin-bottom:.5rem;">
+                    <label class="row gap-sm center-v small muted"><input type="checkbox" checked="@autoScroll" @onchange="ToggleAutoScroll" /> Auto-scroll</label>
+                    <AppButton Variant="ghost" OnClick="Refresh">Refresh</AppButton>
+                </div>
+                <div class="code-log mono" @ref="logContainer">
+@string.Join("\n", details.Logs.Select(l => $"[{l.Timestamp:HH:mm:ss}] {l.Level}: {l.Message}"))
+                </div>
+            </AppCard>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private JobDetailsDto? details;
+    private string? error;
+    private bool autoScroll = true;
+    private ElementReference logContainer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        HubClient.JobUpdated += OnJobUpdated;
+        HubClient.JobLogAppended += OnJobLogAppended;
+        await HubClient.EnsureStartedAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (autoScroll && details is not null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("eval", "0");
+            }
+            catch { }
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsAuthenticated) return;
+        try
+        {
+            error = null;
+            details = await Api.GetJobAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task Refresh(MouseEventArgs _) => await LoadAsync();
+    private void OnJobUpdated(JobDto job)
+    {
+        if (job.Id != Id) return;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private void OnJobLogAppended(Guid jobId, JobLogDto log)
+    {
+        if (jobId != Id || details is null) return;
+        _ = InvokeAsync(() =>
+        {
+            details.Logs.Add(log);
+            StateHasChanged();
+        });
+    }
+
+    private Task ToggleAutoScroll(ChangeEventArgs e)
+    {
+        autoScroll = e.Value is bool b && b;
+        return Task.CompletedTask;
+    }
+
+    private RenderFragment<JobStepDto> StepRow => step => @<tr>
+        <td>@step.NodeId</td>
+        <td>@step.BlockType</td>
+        <td><StatusPill Text="@step.Status.ToString()" Tone="@StepTone(step.Status)" /></td>
+        <td>@(step.ExitCode?.ToString() ?? "-")</td>
+    </tr>;
+
+    private static string JobTone(JobStatus s) => s switch
+    {
+        JobStatus.Succeeded => "success",
+        JobStatus.Failed => "error",
+        JobStatus.Running => "info",
+        JobStatus.Assigned => "warn",
+        _ => "neutral"
+    };
+
+    private static string StepTone(StepStatus s) => s switch
+    {
+        StepStatus.Succeeded => "success",
+        StepStatus.Failed => "error",
+        StepStatus.Running => "info",
+        _ => "neutral"
+    };
+
+    private bool EnsureAuthenticated()
+    {
+        if (Session.IsAuthenticated) return true;
+        Nav.NavigateTo($"/login?returnUrl=%2Fjobs%2F{Id}", replace: true);
+        return false;
+    }
+
+    public void Dispose()
+    {
+        HubClient.JobUpdated -= OnJobUpdated;
+        HubClient.JobLogAppended -= OnJobLogAppended;
+    }
+}

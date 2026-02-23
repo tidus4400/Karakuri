@@ -1,0 +1,109 @@
+@page "/tokens"
+@inject OrchestratorApiClient Api
+@inject ApiSessionState Session
+@inject NavigationManager Nav
+
+<PageTitle>Tokens</PageTitle>
+
+@if (!EnsureAdmin())
+{
+}
+else
+{
+    <div class="page-grid">
+        <AppCard Title="Registration Tokens">
+            <div class="actions-row">
+                <AppButton Variant="primary" OnClick="CreateToken">Create one-time token</AppButton>
+                <AppButton Variant="ghost" OnClick="Refresh">Refresh</AppButton>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(error))
+            {
+                <div class="pill pill-error" style="margin-top:.75rem;">@error</div>
+            }
+        </AppCard>
+
+        <AppCard Title="Token Inventory">
+            @if (tokens.Count == 0)
+            {
+                <EmptyState Title="No tokens" Message="Create a token to register a runner." />
+            }
+            else
+            {
+                <DataTable Items="tokens" RowTemplate="TokenRow">
+                    <HeaderTemplate><tr><th>Id</th><th>Expires</th><th>Used</th><th>Status</th></tr></HeaderTemplate>
+                </DataTable>
+            }
+        </AppCard>
+    </div>
+
+    <Modal Open="showTokenModal" OpenChanged="OnModalChanged" Title="Registration Token (shown once)">
+        @if (createdToken is not null)
+        {
+            <div class="stack gap">
+                <div class="muted small">Copy this token now. It is not shown again.</div>
+                <div class="code-log mono">@createdToken.Token</div>
+                <div class="muted small">Expires: @createdToken.ExpiresAt.ToLocalTime().ToString("g")</div>
+            </div>
+        }
+    </Modal>
+}
+
+@code {
+    private List<RegistrationTokenDto> tokens = [];
+    private string? error;
+    private CreateRegistrationTokenResponse? createdToken;
+    private bool showTokenModal;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            error = null;
+            tokens = await Api.GetTokensAsync();
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task CreateToken(MouseEventArgs _)
+    {
+        try
+        {
+            createdToken = await Api.CreateTokenAsync();
+            showTokenModal = true;
+            await LoadAsync();
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task Refresh(MouseEventArgs _) => await LoadAsync();
+    private Task OnModalChanged(bool open) { showTokenModal = open; return Task.CompletedTask; }
+
+    private RenderFragment<RegistrationTokenDto> TokenRow => t => @<tr>
+        <td class="mono small">@t.Id</td>
+        <td>@t.ExpiresAt.ToLocalTime().ToString("g")</td>
+        <td>@(t.UsedAt?.ToLocalTime().ToString("g") ?? "-")</td>
+        <td>
+            <StatusPill Text="@TokenStatus(t)" Tone="@TokenTone(t)" />
+        </td>
+    </tr>;
+
+    private static string TokenStatus(RegistrationTokenDto t) => t.UsedAt is not null ? "Used" : t.IsExpired ? "Expired" : "Available";
+    private static string TokenTone(RegistrationTokenDto t) => t.UsedAt is not null ? "neutral" : t.IsExpired ? "warn" : "success";
+
+    private bool EnsureAdmin()
+    {
+        if (!Session.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login?returnUrl=%2Ftokens", replace: true);
+            return false;
+        }
+        if (!Session.IsAdmin)
+        {
+            Nav.NavigateTo("/dashboard", replace: true);
+            return false;
+        }
+        return true;
+    }
+}

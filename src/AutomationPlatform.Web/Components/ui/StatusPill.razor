@@ -1,0 +1,8 @@
+<span class="@CssClass">@Text</span>
+
+@code {
+    [Parameter] public string Text { get; set; } = string.Empty;
+    [Parameter] public string Tone { get; set; } = "neutral";
+
+    private string CssClass => $"pill pill-{Tone}";
+}

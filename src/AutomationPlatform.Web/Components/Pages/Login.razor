@@ -1,0 +1,96 @@
+@page "/login"
+@inject OrchestratorApiClient Api
+@inject ApiSessionState Session
+@inject NavigationManager Nav
+
+<PageTitle>Login</PageTitle>
+
+<div class="login-wrap">
+    <div class="stack gap card login-card">
+        <AppCard Title="Sign In">
+            <div class="stack gap">
+                <AppInput Label="Email" Value="@email" ValueChanged="@(v => email = v ?? string.Empty)" Placeholder="admin@local" />
+                <AppInput Label="Password" Type="password" Value="@password" ValueChanged="@(v => password = v ?? string.Empty)" />
+                @if (!string.IsNullOrWhiteSpace(error))
+                {
+                    <div class="pill pill-error">@error</div>
+                }
+                <div class="actions-row">
+                    <AppButton Variant="primary" OnClick="LoginClick" Disabled="busy">@(busy ? "Signing in..." : "Sign In")</AppButton>
+                    <AppButton Variant="ghost" OnClick="FillAdmin">Use Admin</AppButton>
+                    <AppButton Variant="ghost" OnClick="FillUser">Use User</AppButton>
+                </div>
+            </div>
+        </AppCard>
+
+        <AppCard Title="Create User (MVP)">
+            <div class="stack gap-sm">
+                <div class="muted small">Creates a standard user account via orchestrator auth API.</div>
+                <div class="actions-row">
+                    <AppButton Variant="ghost" OnClick="RegisterDemo">Create demo user</AppButton>
+                </div>
+            </div>
+        </AppCard>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private string email = "admin@local";
+    private string password = "Admin123!";
+    private bool busy;
+    private string? error;
+
+    protected override void OnInitialized()
+    {
+        if (Session.IsAuthenticated)
+        {
+            Nav.NavigateTo("/dashboard", replace: true);
+        }
+    }
+
+    private async Task LoginClick(MouseEventArgs _)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var result = await Api.LoginAsync(new LoginRequest { Email = email, Password = password });
+            if (!result.Success || result.User is null)
+            {
+                error = result.Error ?? "Login failed";
+                return;
+            }
+            Nav.NavigateTo(string.IsNullOrWhiteSpace(ReturnUrl) ? "/dashboard" : ReturnUrl!, replace: true);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private Task FillAdmin(MouseEventArgs _) { email = "admin@local"; password = "Admin123!"; return Task.CompletedTask; }
+    private Task FillUser(MouseEventArgs _) { email = "user@local"; password = "User123!"; return Task.CompletedTask; }
+
+    private async Task RegisterDemo(MouseEventArgs _)
+    {
+        error = null;
+        try
+        {
+            await Api.RegisterUserAsync(new RegisterUserRequest
+            {
+                Email = $"user{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}@local",
+                Password = "User123!"
+            });
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

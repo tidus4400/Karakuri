@@ -1,0 +1,22 @@
+<section class="card @Class">
+    @if (!string.IsNullOrWhiteSpace(Title))
+    {
+        <header class="card-head">
+            <h3>@Title</h3>
+            @if (HeaderActions is not null)
+            {
+                <div class="row gap-sm">@HeaderActions</div>
+            }
+        </header>
+    }
+    <div class="card-body">
+        @ChildContent
+    </div>
+</section>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

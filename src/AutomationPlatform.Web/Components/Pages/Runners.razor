@@ -1,0 +1,107 @@
+@page "/runners"
+@implements IDisposable
+@inject OrchestratorApiClient Api
+@inject ApiSessionState Session
+@inject MonitoringHubClient HubClient
+@inject NavigationManager Nav
+
+<PageTitle>Runners</PageTitle>
+
+@if (!EnsureAdmin())
+{
+}
+else
+{
+    <div class="page-grid">
+        <div class="actions-row"><AppButton Variant="ghost" OnClick="Refresh">Refresh</AppButton></div>
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="pill pill-error">@error</div>
+        }
+        <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px,1fr));">
+            @foreach (var r in runners)
+            {
+                <AppCard Title="@r.Name">
+                    <div class="stack gap-sm">
+                        <div class="row between center-v"><span class="muted">Status</span><StatusPill Text="@r.Status.ToString()" Tone="@RunnerTone(r.Status)" /></div>
+                        <div class="row between"><span class="muted">OS</span><span>@r.Os</span></div>
+                        <div class="row between"><span class="muted">Tags</span><span>@(r.Tags ?? "-")</span></div>
+                        <div class="row between"><span class="muted">Last heartbeat</span><span>@TimeAgo(r.LastHeartbeatAt)</span></div>
+                    </div>
+                </AppCard>
+            }
+        </div>
+        @if (runners.Count == 0)
+        {
+            <EmptyState Title="No runners" Message="Create a token, then start a runner agent to register it." />
+        }
+    </div>
+}
+
+@code {
+    private List<RunnerDto> runners = [];
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        HubClient.RunnerUpdated += OnRunnerUpdated;
+        await HubClient.EnsureStartedAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            error = null;
+            runners = await Api.GetRunnersAsync();
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task Refresh(MouseEventArgs _) => await LoadAsync();
+    private void OnRunnerUpdated(RunnerDto runner) => _ = InvokeAsync(() =>
+    {
+        var idx = runners.FindIndex(r => r.Id == runner.Id);
+        if (idx >= 0) runners[idx] = runner;
+        else runners.Add(runner);
+        StateHasChanged();
+    });
+
+    private bool EnsureAdmin()
+    {
+        if (!Session.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login?returnUrl=%2Frunners", replace: true);
+            return false;
+        }
+        if (!Session.IsAdmin)
+        {
+            Nav.NavigateTo("/dashboard", replace: true);
+            return false;
+        }
+        return true;
+    }
+
+    private static string RunnerTone(RunnerStatus s) => s switch
+    {
+        RunnerStatus.Online => "success",
+        RunnerStatus.Busy => "info",
+        RunnerStatus.Offline => "neutral",
+        _ => "warn"
+    };
+
+    private static string TimeAgo(DateTimeOffset? timestamp)
+    {
+        if (timestamp is null) return "never";
+        var delta = DateTimeOffset.UtcNow - timestamp.Value;
+        if (delta.TotalSeconds < 60) return $"{Math.Max(1, (int)delta.TotalSeconds)}s ago";
+        if (delta.TotalMinutes < 60) return $"{(int)delta.TotalMinutes}m ago";
+        return $"{(int)delta.TotalHours}h ago";
+    }
+
+    public void Dispose()
+    {
+        HubClient.RunnerUpdated -= OnRunnerUpdated;
+    }
+}

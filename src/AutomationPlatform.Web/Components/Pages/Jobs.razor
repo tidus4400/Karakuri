@@ -1,0 +1,119 @@
+@page "/jobs"
+@implements IDisposable
+@inject OrchestratorApiClient Api
+@inject ApiSessionState Session
+@inject MonitoringHubClient HubClient
+@inject NavigationManager Nav
+
+<PageTitle>Jobs</PageTitle>
+
+@if (!EnsureAuthenticated())
+{
+}
+else
+{
+    <div class="page-grid">
+        <AppCard Title="Jobs">
+            <div class="row gap center-v" style="margin-bottom:.75rem;">
+                <AppSelect Label="Status filter" Value="@filter" ValueChanged="OnFilterChanged">
+                    <option value="all">All</option>
+                    @foreach (var status in Enum.GetValues<JobStatus>())
+                    {
+                        <option value="@status">@status</option>
+                    }
+                </AppSelect>
+                <AppButton Variant="ghost" OnClick="Refresh">Refresh</AppButton>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(error))
+            {
+                <div class="pill pill-error">@error</div>
+            }
+            else if (FilteredJobs.Count == 0)
+            {
+                <EmptyState Title="No jobs" Message="Run a flow from the Flows page." />
+            }
+            else
+            {
+                <DataTable Items="FilteredJobs" RowTemplate="JobRow">
+                    <HeaderTemplate>
+                        <tr><th>Flow</th><th>Status</th><th>Runner</th><th>Started</th><th>Duration</th></tr>
+                    </HeaderTemplate>
+                </DataTable>
+            }
+        </AppCard>
+    </div>
+}
+
+@code {
+    private List<JobDto> jobs = [];
+    private string filter = "all";
+    private string? error;
+
+    private List<JobDto> FilteredJobs => filter == "all"
+        ? jobs
+        : jobs.Where(j => string.Equals(j.Status.ToString(), filter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        HubClient.JobUpdated += OnJobUpdated;
+        await HubClient.EnsureStartedAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsAuthenticated) return;
+        try
+        {
+            error = null;
+            jobs = await Api.GetJobsAsync();
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private Task OnFilterChanged(string? value)
+    {
+        filter = value ?? "all";
+        return Task.CompletedTask;
+    }
+
+    private async Task Refresh(MouseEventArgs _) => await LoadAsync();
+    private void OnJobUpdated(JobDto job) => _ = InvokeAsync(() =>
+    {
+        var idx = jobs.FindIndex(j => j.Id == job.Id);
+        if (idx >= 0) jobs[idx] = job;
+        else jobs.Insert(0, job);
+        StateHasChanged();
+    });
+
+    private RenderFragment<JobDto> JobRow => job => @<tr style="cursor:pointer" @onclick="@(() => OpenJob(job.Id))">
+        <td>@job.FlowName</td>
+        <td><StatusPill Text="@job.Status.ToString()" Tone="@JobTone(job.Status)" /></td>
+        <td>@(job.AgentName ?? "-")</td>
+        <td class="muted small">@(job.StartedAt?.ToLocalTime().ToString("g") ?? "-")</td>
+        <td class="muted small">@(job.DurationMs.HasValue ? TimeSpan.FromMilliseconds(job.DurationMs.Value).ToString(@"mm\:ss") : "-")</td>
+    </tr>;
+
+    private void OpenJob(Guid id) => Nav.NavigateTo($"/jobs/{id}");
+
+    private static string JobTone(JobStatus s) => s switch
+    {
+        JobStatus.Succeeded => "success",
+        JobStatus.Failed => "error",
+        JobStatus.Running => "info",
+        JobStatus.Assigned => "warn",
+        _ => "neutral"
+    };
+
+    private bool EnsureAuthenticated()
+    {
+        if (Session.IsAuthenticated) return true;
+        Nav.NavigateTo("/login?returnUrl=%2Fjobs", replace: true);
+        return false;
+    }
+
+    public void Dispose()
+    {
+        HubClient.JobUpdated -= OnJobUpdated;
+    }
+}

@@ -1,0 +1,22 @@
+<label class="field">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <span class="field-label">@Label</span>
+    }
+    <input class="input @Class"
+           type="@Type"
+           value="@Value"
+           placeholder="@Placeholder"
+           @oninput="HandleInput" />
+</label>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public string Type { get; set; } = "text";
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private Task HandleInput(ChangeEventArgs e) => ValueChanged.InvokeAsync(e.Value?.ToString());
+}

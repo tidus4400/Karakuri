@@ -1,0 +1,106 @@
+@page "/flows"
+@inject OrchestratorApiClient Api
+@inject ApiSessionState Session
+@inject NavigationManager Nav
+
+<PageTitle>Flows</PageTitle>
+
+@if (!EnsureAuthenticated())
+{
+}
+else
+{
+    <div class="page-grid">
+        <AppCard Title="Create Flow">
+            <div class="row gap center-v">
+                <div style="flex:1"><AppInput Label="Flow name" Value="@newFlowName" ValueChanged="@(v => newFlowName = v ?? string.Empty)" Placeholder="My flow" /></div>
+                <AppButton Variant="primary" Class="" OnClick="CreateFlow">Create</AppButton>
+                <AppButton Variant="ghost" OnClick="Refresh">Refresh</AppButton>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(error))
+            {
+                <div class="pill pill-error" style="margin-top:.75rem;">@error</div>
+            }
+        </AppCard>
+
+        <AppCard Title="Flows">
+            @if (flows.Count == 0)
+            {
+                <EmptyState Title="No flows" Message="Create a flow to start building automation." />
+            }
+            else
+            {
+                <DataTable Items="flows" RowTemplate="FlowRow">
+                    <HeaderTemplate>
+                        <tr><th>Name</th><th>Version</th><th>Enabled</th><th>Updated</th><th>Actions</th></tr>
+                    </HeaderTemplate>
+                </DataTable>
+            }
+        </AppCard>
+    </div>
+}
+
+@code {
+    private List<FlowSummaryDto> flows = [];
+    private string newFlowName = string.Empty;
+    private string? error;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsAuthenticated) return;
+        error = null;
+        try { flows = await Api.GetFlowsAsync(); }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task CreateFlow(MouseEventArgs _)
+    {
+        if (string.IsNullOrWhiteSpace(newFlowName)) return;
+        try
+        {
+            var created = await Api.CreateFlowAsync(new CreateFlowRequest { Name = newFlowName });
+            newFlowName = string.Empty;
+            await LoadAsync();
+            Nav.NavigateTo($"/flows/{created.Id}/builder");
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task Refresh(MouseEventArgs _) => await LoadAsync();
+
+    private RenderFragment<FlowSummaryDto> FlowRow => flow => @<tr>
+        <td>@flow.Name<br /><span class="muted small">@flow.Description</span></td>
+        <td>v@flow.LatestVersionNumber</td>
+        <td><StatusPill Text="@(flow.IsEnabled ? "Enabled" : "Disabled")" Tone="@(flow.IsEnabled ? "success" : "neutral")" /></td>
+        <td class="muted small">@flow.UpdatedAt.ToLocalTime().ToString("g")</td>
+        <td>
+            <div class="actions-row">
+                <AppButton Variant="ghost" OnClick="@(_ => Nav.NavigateTo($"/flows/{flow.Id}/builder"))">Edit Builder</AppButton>
+                <AppButton Variant="primary" OnClick="@(_ => RunFlow(flow.Id))">Run</AppButton>
+                <AppButton Variant="ghost" OnClick="@(_ => Nav.NavigateTo("/jobs"))">History</AppButton>
+            </div>
+        </td>
+    </tr>;
+
+    private async Task RunFlow(Guid flowId)
+    {
+        try
+        {
+            var job = await Api.RunFlowAsync(flowId);
+            Nav.NavigateTo($"/jobs/{job.Id}");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private bool EnsureAuthenticated()
+    {
+        if (Session.IsAuthenticated) return true;
+        Nav.NavigateTo("/login?returnUrl=%2Fflows", replace: true);
+        return false;
+    }
+}

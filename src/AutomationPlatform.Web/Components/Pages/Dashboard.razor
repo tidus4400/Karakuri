@@ -1,0 +1,167 @@
+@page "/dashboard"
+@implements IDisposable
+@inject OrchestratorApiClient Api
+@inject ApiSessionState Session
+@inject MonitoringHubClient HubClient
+@inject NavigationManager Nav
+
+<PageTitle>Dashboard</PageTitle>
+
+@if (!EnsureAuthenticated())
+{
+}
+else
+{
+    <div class="page-grid">
+        <div class="kpi-grid">
+            <AppCard Title="Flows"><div class="kpi-value">@flows.Count</div></AppCard>
+            <AppCard Title="Jobs"><div class="kpi-value">@jobs.Count</div></AppCard>
+            <AppCard Title="Running"><div class="kpi-value">@jobs.Count(j => j.Status == JobStatus.Running)</div></AppCard>
+            <AppCard Title="Online Runners"><div class="kpi-value">@runners.Count(r => r.Status is RunnerStatus.Online or RunnerStatus.Busy)</div></AppCard>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="pill pill-error">@error</div>
+        }
+
+        <div class="split-grid">
+            <AppCard Title="Recent Jobs">
+                @if (jobs.Count == 0)
+                {
+                    <EmptyState Title="No jobs" Message="Run a flow to see execution history." />
+                }
+                else
+                {
+                    <DataTable Items="jobs.Take(10).ToList()" RowTemplate="JobRow">
+                        <HeaderTemplate>
+                            <tr><th>Flow</th><th>Status</th><th>Runner</th><th>Queued</th></tr>
+                        </HeaderTemplate>
+                    </DataTable>
+                }
+            </AppCard>
+
+            <AppCard Title="Runners">
+                @if (!Session.IsAdmin)
+                {
+                    <EmptyState Title="Admin only" Message="Runner inventory is visible to admins." />
+                }
+                else if (runners.Count == 0)
+                {
+                    <EmptyState Title="No runners" Message="Register a runner agent to execute flows." />
+                }
+                else
+                {
+                    <div class="stack gap-sm">
+                        @foreach (var r in runners.Take(8))
+                        {
+                            <div class="row between center-v card" style="padding:.75rem;">
+                                <div class="stack">
+                                    <strong>@r.Name</strong>
+                                    <span class="muted small">@r.Os</span>
+                                </div>
+                                <StatusPill Text="@r.Status.ToString()" Tone="@RunnerTone(r.Status)" />
+                            </div>
+                        }
+                    </div>
+                }
+            </AppCard>
+        </div>
+    </div>
+}
+
+@code {
+    private List<FlowSummaryDto> flows = [];
+    private List<JobDto> jobs = [];
+    private List<RunnerDto> runners = [];
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await LoadAsync();
+        HubClient.JobUpdated += OnJobUpdated;
+        HubClient.RunnerUpdated += OnRunnerUpdated;
+        await HubClient.EnsureStartedAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsAuthenticated) return;
+        error = null;
+        try
+        {
+            flows = await Api.GetFlowsAsync();
+            jobs = await Api.GetJobsAsync();
+            if (Session.IsAdmin)
+            {
+                runners = await Api.GetRunnersAsync();
+            }
+            else
+            {
+                runners = [];
+            }
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private bool EnsureAuthenticated()
+    {
+        if (Session.IsAuthenticated) return true;
+        Nav.NavigateTo("/login?returnUrl=%2Fdashboard", replace: true);
+        return false;
+    }
+
+    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+    private void OnJobUpdated(JobDto job) => _ = InvokeAsync(() =>
+    {
+        var idx = jobs.FindIndex(j => j.Id == job.Id);
+        if (idx >= 0) jobs[idx] = job;
+        else jobs.Insert(0, job);
+        StateHasChanged();
+    });
+    private void OnRunnerUpdated(RunnerDto runner) => _ = InvokeAsync(() =>
+    {
+        var idx = runners.FindIndex(r => r.Id == runner.Id);
+        if (idx >= 0) runners[idx] = runner;
+        else runners.Add(runner);
+        StateHasChanged();
+    });
+
+    private RenderFragment<JobDto> JobRow => job => @<tr style="cursor:pointer" @onclick="@(() => OpenJob(job.Id))">
+        <td>@job.FlowName</td>
+        <td><StatusPill Text="@job.Status.ToString()" Tone="@JobTone(job.Status)" /></td>
+        <td>@(job.AgentName ?? "-")</td>
+        <td class="muted small">@job.QueuedAt.ToLocalTime().ToString("g")</td>
+    </tr>;
+
+    private void OpenJob(Guid id) => Nav.NavigateTo($"/jobs/{id}");
+
+    private static string JobTone(JobStatus s) => s switch
+    {
+        JobStatus.Succeeded => "success",
+        JobStatus.Failed => "error",
+        JobStatus.Running => "info",
+        JobStatus.Assigned => "warn",
+        _ => "neutral"
+    };
+
+    private static string RunnerTone(RunnerStatus s) => s switch
+    {
+        RunnerStatus.Online => "success",
+        RunnerStatus.Busy => "info",
+        RunnerStatus.Offline => "neutral",
+        _ => "warn"
+    };
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        HubClient.JobUpdated -= OnJobUpdated;
+        HubClient.RunnerUpdated -= OnRunnerUpdated;
+    }
+}

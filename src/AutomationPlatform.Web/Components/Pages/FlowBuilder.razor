@@ -1,0 +1,331 @@
+@page "/flows/{Id:guid}/builder"
+@implements IAsyncDisposable
+@inject OrchestratorApiClient Api
+@inject ApiSessionState Session
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Flow Builder</PageTitle>
+
+@if (!EnsureAuthenticated())
+{
+}
+else if (flow is null)
+{
+    <AppCard Title="Flow Builder">@(error ?? "Loading flow...")</AppCard>
+}
+else
+{
+    <div class="page-grid">
+        <div class="row between center-v">
+            <div>
+                <h1>@flow.Name</h1>
+                <div class="muted small">Flow Builder · v@(latestVersion?.VersionNumber ?? 0)</div>
+            </div>
+            <div class="actions-row">
+                <AppButton Variant="ghost" OnClick="ResetViewport">Reset View</AppButton>
+                <AppButton Variant="ghost" OnClick="Save">Save Version</AppButton>
+                <AppButton Variant="primary" OnClick="Run">Run Flow</AppButton>
+            </div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(statusMessage))
+        {
+            <div class="pill pill-info">@statusMessage</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="pill pill-error">@error</div>
+        }
+
+        <div class="builder-grid">
+            <AppCard Title="Palette" Class="builder-palette">
+                <div class="stack gap-sm">
+                    <AppInput Label="Search" Value="@paletteSearch" ValueChanged="@(v => paletteSearch = v ?? string.Empty)" Placeholder="RunProcess" />
+                    <div class="palette-list">
+                        @foreach (var item in PaletteItems.Where(p => p.Contains(paletteSearch, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            <div class="palette-item" draggable="true" @ondragstart="(() => dragPaletteType = item)">
+                                <strong>@item</strong>
+                                <div class="muted small">Drag to canvas or click add</div>
+                                <div class="actions-row" style="margin-top:.5rem;">
+                                    <AppButton Variant="ghost" OnClick="@(_ => AddNodeFromPalette(item))">Add</AppButton>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </AppCard>
+
+            <AppCard Title="Canvas" Class="builder-canvas-card">
+                <div class="canvas-host" @ref="canvasHost" @ondragover:preventDefault @ondrop="OnCanvasDrop" @onpointermove="OnCanvasPointerMove" @onpointerup="OnCanvasPointerUp">
+                    <div class="canvas-world" style="transform: translate(@panXpx, @panYpx) scale(@zoom);">
+                        <svg class="edge-layer" viewBox="0 0 4000 4000" preserveAspectRatio="none">
+                            @foreach (var e in Definition.Edges)
+                            {
+                                var from = Definition.Nodes.FirstOrDefault(n => n.NodeId == e.From);
+                                var to = Definition.Nodes.FirstOrDefault(n => n.NodeId == e.To);
+                                if (from is null || to is null) { continue; }
+                                <line x1="@(from.X + 180)" y1="@(from.Y + 40)" x2="@to.X" y2="@(to.Y + 40)" stroke="#4e6874" stroke-width="2" />
+                            }
+                        </svg>
+
+                        @foreach (var node in Definition.Nodes)
+                        {
+                            <div class="node @(selectedNodeId == node.NodeId ? "selected" : "")"
+                                 style="left:@(node.X)px; top:@(node.Y)px;"
+                                 @onclick="(() => SelectNode(node.NodeId))"
+                                 @onpointerdown="(e => BeginNodeDrag(node.NodeId, e))">
+                                <div class="node-head">@node.DisplayName</div>
+                                <div class="node-body">@node.BlockType</div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </AppCard>
+
+            <AppCard Title="Inspector" Class="builder-inspector">
+                @if (SelectedNode is null)
+                {
+                    <EmptyState Title="No node selected" Message="Click a node to edit RunProcess settings." />
+                }
+                else
+                {
+                    <div class="stack gap">
+                        <AppInput Label="Display Name" Value="@SelectedNode.DisplayName" ValueChanged="SetNodeDisplayName" />
+                        <AppInput Label="Path" Value="@PathConfig" ValueChanged="@(v => SetConfig("path", v ?? string.Empty))" Placeholder="dotnet" />
+                        <AppInput Label="Args" Value="@ArgsConfig" ValueChanged="@(v => SetConfig("args", v ?? string.Empty))" Placeholder="--info" />
+                        <AppInput Label="Working Dir" Value="@WorkingDirConfig" ValueChanged="@(v => SetConfig("workingDir", v ?? string.Empty))" />
+                        <AppInput Label="Timeout (sec)" Type="number" Value="@TimeoutConfig" ValueChanged="SetTimeout" />
+                        <div class="row gap-sm center-v">
+                            <AppButton Variant="danger" OnClick="DeleteSelected">Delete Node</AppButton>
+                            <span class="muted small">Node ID: @SelectedNode.NodeId</span>
+                        </div>
+                    </div>
+                }
+            </AppCard>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private FlowDto? flow;
+    private FlowVersionDto? latestVersion;
+    private FlowDefinition Definition { get; set; } = new();
+    private string? selectedNodeId;
+    private string paletteSearch = string.Empty;
+    private string? error;
+    private string? statusMessage;
+    private string? dragPaletteType;
+    private ElementReference canvasHost;
+    private DotNetObjectReference<FlowBuilder>? dotNetRef;
+    private double panX;
+    private double panY;
+    private double zoom = 1;
+    private string panXpx => FormattableString.Invariant($"{panX}px");
+    private string panYpx => FormattableString.Invariant($"{panY}px");
+    private string? dragNodeId;
+    private double dragStartClientX;
+    private double dragStartClientY;
+    private double nodeStartX;
+    private double nodeStartY;
+
+    private static readonly string[] PaletteItems = ["RunProcess"];
+
+    private NodeDto? SelectedNode => Definition.Nodes.FirstOrDefault(n => n.NodeId == selectedNodeId);
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("flowCanvas.init", canvasHost, dotNetRef);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsAuthenticated) return;
+        try
+        {
+            error = null;
+            flow = await Api.GetFlowAsync(Id);
+            latestVersion = await Api.GetLatestFlowVersionAsync(Id);
+            Definition = latestVersion.Definition ?? new FlowDefinition();
+            selectedNodeId ??= Definition.Nodes.FirstOrDefault()?.NodeId;
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private void SelectNode(string nodeId) => selectedNodeId = nodeId;
+
+    private void BeginNodeDrag(string nodeId, PointerEventArgs e)
+    {
+        if (e.Button != 0) return;
+        var node = Definition.Nodes.FirstOrDefault(n => n.NodeId == nodeId);
+        if (node is null) return;
+        selectedNodeId = nodeId;
+        dragNodeId = nodeId;
+        dragStartClientX = e.ClientX;
+        dragStartClientY = e.ClientY;
+        nodeStartX = node.X;
+        nodeStartY = node.Y;
+    }
+
+    private void OnCanvasPointerMove(PointerEventArgs e)
+    {
+        if (dragNodeId is null) return;
+        var node = Definition.Nodes.FirstOrDefault(n => n.NodeId == dragNodeId);
+        if (node is null) return;
+        node.X = Math.Round(nodeStartX + (e.ClientX - dragStartClientX) / zoom, 1);
+        node.Y = Math.Round(nodeStartY + (e.ClientY - dragStartClientY) / zoom, 1);
+    }
+
+    private void OnCanvasPointerUp(PointerEventArgs _) => dragNodeId = null;
+
+    private async Task OnCanvasDrop(DragEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(dragPaletteType)) return;
+        var point = await JS.InvokeAsync<CanvasPoint>("flowCanvas.clientToWorld", canvasHost, e.ClientX, e.ClientY);
+        AddNode(dragPaletteType, point.X, point.Y);
+        dragPaletteType = null;
+    }
+
+    private Task AddNodeFromPalette(string blockType)
+    {
+        AddNode(blockType, 120 + Definition.Nodes.Count * 24, 80 + Definition.Nodes.Count * 24);
+        return Task.CompletedTask;
+    }
+
+    private void AddNode(string blockType, double x, double y)
+    {
+        var idx = Definition.Nodes.Count + 1;
+        var node = new NodeDto
+        {
+            NodeId = $"n{idx}",
+            BlockType = blockType,
+            DisplayName = $"{blockType} {idx}",
+            X = x,
+            Y = y,
+            Config = new Dictionary<string, object?>
+            {
+                ["path"] = "dotnet",
+                ["args"] = "--info",
+                ["workingDir"] = string.Empty,
+                ["timeoutSec"] = 30
+            }
+        };
+        Definition.Nodes.Add(node);
+        selectedNodeId = node.NodeId;
+    }
+
+    private async Task Save(MouseEventArgs _)
+    {
+        if (flow is null) return;
+        try
+        {
+            statusMessage = null;
+            error = null;
+            latestVersion = await Api.SaveFlowVersionAsync(flow.Id, new SaveFlowVersionRequest { Definition = Definition });
+            statusMessage = $"Saved version {latestVersion.VersionNumber} at {DateTimeOffset.Now:t}";
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task Run(MouseEventArgs _)
+    {
+        if (flow is null) return;
+        try
+        {
+            error = null;
+            var job = await Api.RunFlowAsync(flow.Id);
+            statusMessage = $"Job created: {job.Id}";
+            Nav.NavigateTo($"/jobs/{job.Id}");
+        }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private Task ResetViewport(MouseEventArgs _)
+    {
+        panX = 0;
+        panY = 0;
+        zoom = 1;
+        return Task.CompletedTask;
+    }
+
+    private Task SetNodeDisplayName(string? value)
+    {
+        if (SelectedNode is not null) SelectedNode.DisplayName = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private string GetConfig(string key) => SelectedNode is null ? string.Empty : JsonHelpers.GetString(SelectedNode.Config, key) ?? string.Empty;
+    private string PathConfig => GetConfig("path");
+    private string ArgsConfig => GetConfig("args");
+    private string WorkingDirConfig => GetConfig("workingDir");
+    private string TimeoutConfig => GetConfig("timeoutSec");
+
+    private void SetConfig(string key, object? value)
+    {
+        if (SelectedNode is null) return;
+        SelectedNode.Config[key] = value;
+    }
+
+    private Task SetTimeout(string? value)
+    {
+        if (int.TryParse(value, out var sec)) SetConfig("timeoutSec", sec);
+        return Task.CompletedTask;
+    }
+
+    private Task DeleteSelected(MouseEventArgs _)
+    {
+        if (SelectedNode is null) return Task.CompletedTask;
+        var id = SelectedNode.NodeId;
+        Definition.Nodes.RemoveAll(n => n.NodeId == id);
+        Definition.Edges.RemoveAll(e => e.From == id || e.To == id);
+        selectedNodeId = Definition.Nodes.FirstOrDefault()?.NodeId;
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnViewportChanged(CanvasViewport viewport)
+    {
+        panX = viewport.X;
+        panY = viewport.Y;
+        zoom = viewport.Zoom;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private bool EnsureAuthenticated()
+    {
+        if (Session.IsAuthenticated) return true;
+        Nav.NavigateTo($"/login?returnUrl=%2Fflows%2F{Id}%2Fbuilder", replace: true);
+        return false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("flowCanvas.dispose", canvasHost);
+        }
+        catch { }
+        dotNetRef?.Dispose();
+    }
+
+    public sealed class CanvasPoint
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+    }
+
+    public sealed class CanvasViewport
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Zoom { get; set; }
+    }
+}

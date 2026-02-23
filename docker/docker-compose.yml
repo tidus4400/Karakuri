@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: automationplatform-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: automation
+      POSTGRES_PASSWORD: automation
+      POSTGRES_DB: automationplatform
+    ports:
+      - "5432:5432"
+    volumes:
+      - automationplatform_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U automation -d automationplatform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  automationplatform_pgdata:

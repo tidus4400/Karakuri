@@ -1,0 +1,24 @@
+@if (Open)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-head row">
+                <h3>@Title</h3>
+                <AppButton Variant="ghost" OnClick="CloseClick">Close</AppButton>
+            </div>
+            <div class="modal-body">
+                @ChildContent
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+
+    private Task Close() => OpenChanged.InvokeAsync(false);
+    private Task CloseClick(MouseEventArgs _) => Close();
+}

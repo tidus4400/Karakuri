@@ -1,0 +1,13 @@
+bin/
+obj/
+bin\\
+obj\\
+*\\Debug/
+*\\Release/
+.DS_Store
+.vs/
+.idea/
+*.user
+*.suo
+TestResults/
+*.trx

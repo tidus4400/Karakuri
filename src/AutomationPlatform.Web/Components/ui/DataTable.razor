@@ -1,0 +1,25 @@
+@typeparam TItem
+
+<div class="table-wrap">
+    <table class="table">
+        @if (HeaderTemplate is not null)
+        {
+            <thead>@HeaderTemplate</thead>
+        }
+        <tbody>
+            @if (Items is not null)
+            {
+                @foreach (var item in Items)
+                {
+                    @RowTemplate(item)
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public IEnumerable<TItem>? Items { get; set; }
+    [Parameter, EditorRequired] public RenderFragment<TItem> RowTemplate { get; set; } = default!;
+    [Parameter] public RenderFragment? HeaderTemplate { get; set; }
+}
