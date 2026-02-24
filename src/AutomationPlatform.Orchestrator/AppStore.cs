@@ -2,32 +2,15 @@ using System.Security.Claims;
 using System.Text.Json;
 using AutomationPlatform.Shared;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 namespace AutomationPlatform.Orchestrator;
 
-public sealed class AppStore(IHostEnvironment env, IConfiguration configuration)
+public sealed class AppStore(IServiceScopeFactory scopeFactory)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly string _path = ResolvePath(env, configuration.GetValue<string>("Store:FilePath"));
-    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true
-    };
-
     private PlatformStateData _state = new();
     private bool _loaded;
-
-    private static string ResolvePath(IHostEnvironment env, string? configuredPath)
-    {
-        if (string.IsNullOrWhiteSpace(configuredPath))
-        {
-            return Path.Combine(env.ContentRootPath, "data", "store.json");
-        }
-
-        return Path.IsPathRooted(configuredPath)
-            ? configuredPath
-            : Path.Combine(env.ContentRootPath, configuredPath);
-    }
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
@@ -36,12 +19,7 @@ public sealed class AppStore(IHostEnvironment env, IConfiguration configuration)
         {
             if (!_loaded)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-                if (File.Exists(_path))
-                {
-                    await using var fs = File.OpenRead(_path);
-                    _state = await JsonSerializer.DeserializeAsync<PlatformStateData>(fs, _jsonOptions, ct) ?? new PlatformStateData();
-                }
+                await LoadUnsafeAsync(ct);
                 _loaded = true;
             }
 
@@ -119,24 +97,57 @@ public sealed class AppStore(IHostEnvironment env, IConfiguration configuration)
     private async Task EnsureLoadedUnsafeAsync(CancellationToken ct)
     {
         if (_loaded) return;
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        if (File.Exists(_path))
-        {
-            await using var fs = File.OpenRead(_path);
-            _state = await JsonSerializer.DeserializeAsync<PlatformStateData>(fs, _jsonOptions, ct) ?? new PlatformStateData();
-        }
+        await LoadUnsafeAsync(ct);
         _loaded = true;
     }
 
     private async Task SaveUnsafeAsync(CancellationToken ct)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var tmp = _path + ".tmp";
-        await using (var fs = File.Create(tmp))
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        db.JobLogs.RemoveRange(db.JobLogs);
+        db.JobSteps.RemoveRange(db.JobSteps);
+        db.Jobs.RemoveRange(db.Jobs);
+        db.RegistrationTokens.RemoveRange(db.RegistrationTokens);
+        db.RunnerAgents.RemoveRange(db.RunnerAgents);
+        db.FlowVersions.RemoveRange(db.FlowVersions);
+        db.Flows.RemoveRange(db.Flows);
+        db.Blocks.RemoveRange(db.Blocks);
+        await db.SaveChangesAsync(ct);
+
+        await db.Blocks.AddRangeAsync(_state.Blocks, ct);
+        await db.Flows.AddRangeAsync(_state.Flows, ct);
+        await db.FlowVersions.AddRangeAsync(_state.FlowVersions, ct);
+        await db.RunnerAgents.AddRangeAsync(_state.RunnerAgents, ct);
+        await db.RegistrationTokens.AddRangeAsync(_state.RegistrationTokens, ct);
+        await db.Jobs.AddRangeAsync(_state.Jobs, ct);
+        await db.JobSteps.AddRangeAsync(_state.JobSteps, ct);
+        await db.JobLogs.AddRangeAsync(_state.JobLogs, ct);
+        await db.SaveChangesAsync(ct);
+
+        await tx.CommitAsync(ct);
+    }
+
+    private async Task LoadUnsafeAsync(CancellationToken ct)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        _state = new PlatformStateData
         {
-            await JsonSerializer.SerializeAsync(fs, _state, _jsonOptions, ct);
-        }
-        File.Move(tmp, _path, overwrite: true);
+            Blocks = await db.Blocks.AsNoTracking().ToListAsync(ct),
+            Flows = await db.Flows.AsNoTracking().ToListAsync(ct),
+            FlowVersions = await db.FlowVersions.AsNoTracking().ToListAsync(ct),
+            RunnerAgents = await db.RunnerAgents.AsNoTracking().ToListAsync(ct),
+            RegistrationTokens = await db.RegistrationTokens.AsNoTracking().ToListAsync(ct),
+            Jobs = await db.Jobs.AsNoTracking().ToListAsync(ct),
+            JobSteps = await db.JobSteps.AsNoTracking().ToListAsync(ct),
+            JobLogs = await db.JobLogs.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct)
+        };
+        _state.NextJobLogId = _state.JobLogs.Count == 0 ? 1 : _state.JobLogs.Max(x => x.Id) + 1;
     }
 }
 

@@ -32,6 +32,7 @@ Implemented and compiling:
 - Identity auth persistence switched to ASP.NET Core Identity + EF (`Npgsql` provider for runtime)
 - Blazor web switched to SignalR client for live updates (dashboard/jobs/runners/job details)
 - Identity EF migration scaffolding added
+- Domain EF persistence for flows/jobs/runners/tokens/logs added (`PlatformDbContext` + migrations)
 - Automated tests added across shared/orchestrator/runner projects
 - Runner agent implementation added (registration, HMAC signing, heartbeat, long-poll, `RunProcess` execution, local status endpoints)
 - End-to-end cancel support added (user cancel request endpoint, runner cancel polling + process kill + canceled completion endpoint, UI cancel action)
@@ -57,7 +58,7 @@ Coverage highlights:
   - `FlowOrdering` topo sort + cycle fallback
   - integration tests with `WebApplicationFactory<Program>`
   - SQLite-backed Identity auth DB in tests
-  - temp JSON `AppStore` path per test host
+  - SQLite-backed domain DB (`PlatformDbContext`) in tests
   - seeded admin/user login (`/api/auth/login`, `/api/auth/me`)
   - user scoping for `/api/flows`
   - admin-only protection (`/api/tokens`, `/api/runners`)
@@ -71,20 +72,19 @@ Current test command/status:
 ```bash
 dotnet test /Users/tidus4400/Projects/Karakuri/AutomationPlatform.sln -p:NuGetAudit=false
 ```
-- Passes: `20` tests total (`10` shared, `3` runner, `7` orchestrator)
 - Passes: `22` tests total (`10` shared, `4` runner, `8` orchestrator)
 
-Latest coverage snapshots (Cobertura, local run on 2026-02-24):
+Latest coverage snapshots (Cobertura, local run on 2026-02-24, EF domain persistence branch):
 - Shared tests package coverage (`AutomationPlatform.Shared`): line-rate `0.4009`, branch-rate `0.8333`
-- Runner tests package coverage (`AutomationPlatform.Runner`): line-rate `0.1225`, branch-rate `0.1193`
-- Orchestrator tests package coverage (`AutomationPlatform.Orchestrator`): line-rate `0.5020`, branch-rate `0.4784`
+- Runner tests package coverage (`AutomationPlatform.Runner`): line-rate `0.1199`, branch-rate `0.1262`
+- Orchestrator tests package coverage (`AutomationPlatform.Orchestrator`): line-rate `0.3964`, branch-rate `0.4629`
 
 ## Important remaining gaps (still fallback / incomplete)
 
-Domain persistence (flows/jobs/runners/tokens/logs) is still JSON-file based via:
+Domain persistence is now EF-backed, but endpoint logic still goes through an in-memory snapshot facade:
 - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/AppStore.cs`
 
-Identity/auth persistence is EF/PostgreSQL, but core domain persistence is not yet EF-backed.
+`AppStore` now loads/saves through `PlatformDbContext`, but writes currently rewrite the full domain snapshot to DB tables instead of doing incremental EF updates.
 
 Runner is implemented for the MVP pull protocol, but gaps remain:
 - only built-in `RunProcess` block is supported
@@ -96,14 +96,18 @@ Runner is implemented for the MVP pull protocol, but gaps remain:
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Shared`
 - Orchestrator startup/endpoints:
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/Program.cs`
-- Orchestrator JSON domain store (fallback):
+- Orchestrator domain store facade (EF-backed):
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/AppStore.cs`
+- Domain EF DbContext + design-time factory:
+  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/PlatformPersistence.cs`
 - Identity EF DbContext:
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/IdentityPersistence.cs`
 - Identity design-time DbContext factory:
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/AuthIdentityDbContextFactory.cs`
 - Identity migrations:
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/Migrations/Auth`
+- Domain migrations:
+  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/Migrations/Platform`
 - Web API client:
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web/Services/OrchestratorApiClient.cs`
 - Web SignalR client service:
@@ -141,9 +145,12 @@ Local EF tool manifest exists:
 
 ## Startup behavior
 
-- Orchestrator runs Identity migrations on startup (`Database.Migrate()` for `AuthIdentityDbContext`)
+- Orchestrator runs migrations on startup for both contexts:
+  - `Database.Migrate()` for `AuthIdentityDbContext`
+  - `Database.Migrate()` for `PlatformDbContext`
 - `Auth:Provider=Sqlite` is supported (primarily for tests); default remains PostgreSQL/Npgsql
-- Orchestrator still initializes JSON domain store (`AppStore`) for flows/jobs/runners/tokens/logs
+- `Domain:Provider=Sqlite` is supported (primarily for tests); default remains PostgreSQL/Npgsql
+- Orchestrator initializes `AppStore` as an EF-backed domain state facade after DB init/migrations
 - Web connects to orchestrator SignalR hub using header-based auth fallback (`X-User-*`) from current UI session state
 - API cookie auth now returns proper `403` for `/api/*` access-denied instead of redirecting to a missing page
 - Runner HMAC validation now works for JSON-body POSTs because request buffering is enabled before model binding and the validator rewinds before hashing
@@ -175,18 +182,19 @@ EF tools:
 cd /Users/tidus4400/Projects/Karakuri
 dotnet tool restore
 dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator --startup-project src/AutomationPlatform.Orchestrator --context AuthIdentityDbContext
+dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator --startup-project src/AutomationPlatform.Orchestrator --context PlatformDbContext
 ```
 
 ## Recommended next engineering steps
 
-1. Replace `AppStore` JSON domain persistence with EF Core/PostgreSQL domain DbContext.
-2. Replace `AppStore` JSON domain persistence with EF Core/PostgreSQL domain DbContext.
-3. Add jobs-list page bulk/actions UX for cancel/retry and permissions polish.
-4. Tighten web auth (use actual cookie auth forwarding instead of `X-User-*` fallback for cross-process dev).
+1. Refactor orchestrator endpoints/services to use `PlatformDbContext` directly and retire the `AppStore` snapshot rewrite path.
+2. Add jobs-list page bulk/actions UX for cancel/retry and permissions polish.
+3. Tighten web auth (use actual cookie auth forwarding instead of `X-User-*` fallback for cross-process dev).
+4. Add more targeted integration tests around concurrent job updates and runner heartbeat/offline transitions.
 
 ## Known design tradeoffs
 
-- `RunnerAgentEntity.SecretValue` is stored in plaintext in JSON store (MVP simplification). `SecretHash` also stored and validated.
+- `RunnerAgentEntity.SecretValue` is still stored in plaintext in the domain DB (MVP simplification). `SecretHash` is also stored and validated.
 - SignalR subscriptions are client-side; some pages still do manual refresh for initial load and fallback.
-- Domain and auth persistence are split (JSON + PostgreSQL) temporarily.
-- Test integration uses SQLite only for Identity/auth DB; domain store remains JSON even in tests.
+- Domain persistence currently uses an `AppStore` EF facade with full-snapshot rewrites (simple but inefficient).
+- Test integration uses SQLite for both Identity/auth and domain DB contexts.
