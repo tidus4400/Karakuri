@@ -27,6 +27,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=karakuri;Username=automation;Password=automation
+      ConnectionStrings__PlatformConnection: Host=postgres;Port=5432;Database=karakuri;Username=automation;Password=automation
     ports:
       - "5010:8080"
     depends_on:

@@ -7,7 +7,8 @@ COPY ["src/tidus4400.Karakuri.Web/tidus4400.Karakuri.Web.csproj", "src/tidus4400
 RUN dotnet restore "src/tidus4400.Karakuri.Web/tidus4400.Karakuri.Web.csproj"
 
 COPY . .
-RUN dotnet publish "src/tidus4400.Karakuri.Web/tidus4400.Karakuri.Web.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN mkdir -p src/tidus4400.Karakuri.Web/bin/Debug src/tidus4400.Karakuri.Shared/bin/Debug
+RUN dotnet publish "src/tidus4400.Karakuri.Web/tidus4400.Karakuri.Web.csproj" -c Release -o /app/publish /p:UseAppHost=false --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
