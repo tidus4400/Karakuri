@@ -1,13 +1,13 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY ["AutomationPlatform.sln", "./"]
-COPY ["src/AutomationPlatform.Shared/AutomationPlatform.Shared.csproj", "src/AutomationPlatform.Shared/"]
-COPY ["src/AutomationPlatform.Web/AutomationPlatform.Web.csproj", "src/AutomationPlatform.Web/"]
-RUN dotnet restore "src/AutomationPlatform.Web/AutomationPlatform.Web.csproj"
+COPY ["tidus4400.Karakuri.sln", "./"]
+COPY ["src/tidus4400.Karakuri.Shared/tidus4400.Karakuri.Shared.csproj", "src/tidus4400.Karakuri.Shared/"]
+COPY ["src/tidus4400.Karakuri.Web/tidus4400.Karakuri.Web.csproj", "src/tidus4400.Karakuri.Web/"]
+RUN dotnet restore "src/tidus4400.Karakuri.Web/tidus4400.Karakuri.Web.csproj"
 
 COPY . .
-RUN dotnet publish "src/AutomationPlatform.Web/AutomationPlatform.Web.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "src/tidus4400.Karakuri.Web/tidus4400.Karakuri.Web.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
@@ -17,4 +17,4 @@ EXPOSE 8080
 
 COPY --from=build /app/publish .
 
-ENTRYPOINT ["dotnet", "AutomationPlatform.Web.dll"]
+ENTRYPOINT ["dotnet", "tidus4400.Karakuri.Web.dll"]

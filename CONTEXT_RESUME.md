@@ -1,4 +1,4 @@
-# AutomationPlatform Resume Context (for Codex / GH Copilot)
+# tidus4400.Karakuri Resume Context (for Codex / GH Copilot)
 
 Last updated: 2026-02-24
 Workspace: `/Users/tidus4400/Projects/Karakuri`
@@ -6,10 +6,10 @@ Workspace: `/Users/tidus4400/Projects/Karakuri`
 ## Current status
 
 Implemented and compiling:
-- `AutomationPlatform.Shared`
-- `AutomationPlatform.Orchestrator` (Minimal API + SignalR hub + auth)
-- `AutomationPlatform.Web` (Blazor Server UI, custom CSS Grid UI)
-- `AutomationPlatform.Runner` (runner agent implemented: registration + HMAC + polling + RunProcess + local endpoints)
+- `tidus4400.Karakuri.Shared`
+- `tidus4400.Karakuri.Orchestrator` (Minimal API + SignalR hub + auth)
+- `tidus4400.Karakuri.Web` (Blazor Server UI, custom CSS Grid UI)
+- `tidus4400.Karakuri.Runner` (runner agent implemented: registration + HMAC + polling + RunProcess + local endpoints)
 - `tests/*` (new unit + integration test suite)
 
 ## Major features completed
@@ -40,9 +40,9 @@ Implemented and compiling:
 ## Testing suite (added)
 
 Test projects:
-- `/Users/tidus4400/Projects/Karakuri/tests/AutomationPlatform.Shared.Tests`
-- `/Users/tidus4400/Projects/Karakuri/tests/AutomationPlatform.Runner.Tests`
-- `/Users/tidus4400/Projects/Karakuri/tests/AutomationPlatform.Orchestrator.Tests`
+- `/Users/tidus4400/Projects/Karakuri/tests/tidus4400.Karakuri.Shared.Tests`
+- `/Users/tidus4400/Projects/Karakuri/tests/tidus4400.Karakuri.Runner.Tests`
+- `/Users/tidus4400/Projects/Karakuri/tests/tidus4400.Karakuri.Orchestrator.Tests`
 
 Coverage highlights:
 - Shared unit tests:
@@ -70,19 +70,19 @@ Coverage highlights:
 
 Current test command/status:
 ```bash
-dotnet test /Users/tidus4400/Projects/Karakuri/AutomationPlatform.sln -p:NuGetAudit=false
+dotnet test /Users/tidus4400/Projects/Karakuri/tidus4400.Karakuri.sln -p:NuGetAudit=false
 ```
 - Passes: `22` tests total (`10` shared, `4` runner, `8` orchestrator)
 
 Latest coverage snapshots (Cobertura, local run on 2026-02-24, EF domain persistence branch):
-- Shared tests package coverage (`AutomationPlatform.Shared`): line-rate `0.4009`, branch-rate `0.8333`
-- Runner tests package coverage (`AutomationPlatform.Runner`): line-rate `0.1199`, branch-rate `0.1262`
-- Orchestrator tests package coverage (`AutomationPlatform.Orchestrator`): line-rate `0.3964`, branch-rate `0.4629`
+- Shared tests package coverage (`tidus4400.Karakuri.Shared`): line-rate `0.4009`, branch-rate `0.8333`
+- Runner tests package coverage (`tidus4400.Karakuri.Runner`): line-rate `0.1199`, branch-rate `0.1262`
+- Orchestrator tests package coverage (`tidus4400.Karakuri.Orchestrator`): line-rate `0.3964`, branch-rate `0.4629`
 
 ## Important remaining gaps (still fallback / incomplete)
 
 Domain persistence is now EF-backed, but endpoint logic still goes through an in-memory snapshot facade:
-- `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/AppStore.cs`
+- `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator/AppStore.cs`
 
 `AppStore` now loads/saves through `PlatformDbContext`, but writes currently rewrite the full domain snapshot to DB tables instead of doing incremental EF updates.
 
@@ -93,37 +93,37 @@ Runner is implemented for the MVP pull protocol, but gaps remain:
 ## Key files
 
 - Shared contracts/helpers:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Shared`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Shared`
 - Orchestrator startup/endpoints:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/Program.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator/Program.cs`
 - Orchestrator domain store facade (EF-backed):
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/AppStore.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator/AppStore.cs`
 - Domain EF DbContext + design-time factory:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/PlatformPersistence.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator/PlatformPersistence.cs`
 - Identity EF DbContext:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/IdentityPersistence.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator/IdentityPersistence.cs`
 - Identity design-time DbContext factory:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/AuthIdentityDbContextFactory.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator/AuthIdentityDbContextFactory.cs`
 - Identity migrations:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/Migrations/Auth`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator/Migrations/Auth`
 - Domain migrations:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/Migrations/Platform`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator/Migrations/Platform`
 - Web API client:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web/Services/OrchestratorApiClient.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Web/Services/OrchestratorApiClient.cs`
 - Web SignalR client service:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web/Services/MonitoringHubClient.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Web/Services/MonitoringHubClient.cs`
 - Runner core:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/Program.cs`
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/Worker.cs`
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/RunnerEngine.cs`
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/OrchestratorClient.cs`
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/RunProcessExecutor.cs`
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/RunnerCredentialStore.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner/Program.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner/Worker.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner/RunnerEngine.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner/OrchestratorClient.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner/RunProcessExecutor.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner/RunnerCredentialStore.cs`
 - Test harness / integration factory:
-  - `/Users/tidus4400/Projects/Karakuri/tests/AutomationPlatform.Orchestrator.Tests/TestOrchestratorFactory.cs`
-  - `/Users/tidus4400/Projects/Karakuri/tests/AutomationPlatform.Orchestrator.Tests/OrchestratorApiIntegrationTests.cs`
+  - `/Users/tidus4400/Projects/Karakuri/tests/tidus4400.Karakuri.Orchestrator.Tests/TestOrchestratorFactory.cs`
+  - `/Users/tidus4400/Projects/Karakuri/tests/tidus4400.Karakuri.Orchestrator.Tests/OrchestratorApiIntegrationTests.cs`
 - Web job details cancel UI:
-  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web/Components/Pages/JobDetails.razor`
+  - `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Web/Components/Pages/JobDetails.razor`
 
 ## Package state (NuGet now available)
 
@@ -164,25 +164,25 @@ Local EF tool manifest exists:
 
 Build projects:
 ```bash
-dotnet build /Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator/AutomationPlatform.Orchestrator.csproj -p:NuGetAudit=false
-dotnet build /Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web/AutomationPlatform.Web.csproj -p:NuGetAudit=false
-dotnet build /Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/AutomationPlatform.Runner.csproj -p:NuGetAudit=false
-dotnet test /Users/tidus4400/Projects/Karakuri/AutomationPlatform.sln -p:NuGetAudit=false
+dotnet build /Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator/tidus4400.Karakuri.Orchestrator.csproj -p:NuGetAudit=false
+dotnet build /Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Web/tidus4400.Karakuri.Web.csproj -p:NuGetAudit=false
+dotnet build /Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner/tidus4400.Karakuri.Runner.csproj -p:NuGetAudit=false
+dotnet test /Users/tidus4400/Projects/Karakuri/tidus4400.Karakuri.sln -p:NuGetAudit=false
 ```
 
 Run apps:
 ```bash
-dotnet run --project /Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator --urls http://localhost:5010
-dotnet run --project /Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web --urls http://localhost:5020
-dotnet run --project /Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner
+dotnet run --project /Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator --urls http://localhost:5010
+dotnet run --project /Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Web --urls http://localhost:5020
+dotnet run --project /Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner
 ```
 
 EF tools:
 ```bash
 cd /Users/tidus4400/Projects/Karakuri
 dotnet tool restore
-dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator --startup-project src/AutomationPlatform.Orchestrator --context AuthIdentityDbContext
-dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator --startup-project src/AutomationPlatform.Orchestrator --context PlatformDbContext
+dotnet dotnet-ef migrations list --project src/tidus4400.Karakuri.Orchestrator --startup-project src/tidus4400.Karakuri.Orchestrator --context AuthIdentityDbContext
+dotnet dotnet-ef migrations list --project src/tidus4400.Karakuri.Orchestrator --startup-project src/tidus4400.Karakuri.Orchestrator --context PlatformDbContext
 ```
 
 ## Recommended next engineering steps
