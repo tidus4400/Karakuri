@@ -9,7 +9,7 @@ Implemented and compiling:
 - `AutomationPlatform.Shared`
 - `AutomationPlatform.Orchestrator` (Minimal API + SignalR hub + auth)
 - `AutomationPlatform.Web` (Blazor Server UI, custom CSS Grid UI)
-- `AutomationPlatform.Runner` (currently template worker, not full runner-agent implementation)
+- `AutomationPlatform.Runner` (runner agent implemented: registration + HMAC + polling + RunProcess + local endpoints)
 - `tests/*` (new unit + integration test suite)
 
 ## Major features completed
@@ -33,6 +33,7 @@ Implemented and compiling:
 - Blazor web switched to SignalR client for live updates (dashboard/jobs/runners/job details)
 - Identity EF migration scaffolding added
 - Automated tests added across shared/orchestrator/runner projects
+- Runner agent implementation added (registration, HMAC signing, heartbeat, long-poll, `RunProcess` execution, local status endpoints)
 
 ## Testing suite (added)
 
@@ -47,8 +48,9 @@ Coverage highlights:
   - JSON config helper parsing (`string`, `int`, `JsonElement`)
   - `FlowDefinition.CreateDefault()`
 - Runner unit tests:
-  - `Worker` cancellation behavior
-  - worker `StartAsync` / `StopAsync` smoke test
+  - `RunProcessExecutor` success case
+  - `RunProcessExecutor` timeout behavior
+  - bounded stdout capture/truncation
 - Orchestrator tests:
   - `FlowOrdering` topo sort + cycle fallback
   - integration tests with `WebApplicationFactory<Program>`
@@ -66,7 +68,7 @@ Current test command/status:
 ```bash
 dotnet test /Users/tidus4400/Projects/Karakuri/AutomationPlatform.sln -p:NuGetAudit=false
 ```
-- Passes: `19` tests total (`10` shared, `2` runner, `7` orchestrator)
+- Passes: `20` tests total (`10` shared, `3` runner, `7` orchestrator)
 
 ## Important remaining gaps (still fallback / incomplete)
 
@@ -75,11 +77,9 @@ Domain persistence (flows/jobs/runners/tokens/logs) is still JSON-file based via
 
 Identity/auth persistence is EF/PostgreSQL, but core domain persistence is not yet EF-backed.
 
-Runner project is still the default worker template (`Program.cs` + `Worker.cs`) and does not yet implement:
-- runner registration
-- HMAC-signed orchestrator polling
-- `RunProcess` execution
-- local runner status endpoints
+Runner is implemented for the MVP pull protocol, but gaps remain:
+- only built-in `RunProcess` block is supported
+- cancellation is still step-boundary only (no end-to-end cancel endpoint wiring yet)
 
 ## Key files
 
@@ -99,9 +99,13 @@ Runner project is still the default worker template (`Program.cs` + `Worker.cs`)
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web/Services/OrchestratorApiClient.cs`
 - Web SignalR client service:
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web/Services/MonitoringHubClient.cs`
-- Runner (current template):
+- Runner core:
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/Program.cs`
   - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/Worker.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/RunnerEngine.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/OrchestratorClient.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/RunProcessExecutor.cs`
+  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/RunnerCredentialStore.cs`
 - Test harness / integration factory:
   - `/Users/tidus4400/Projects/Karakuri/tests/AutomationPlatform.Orchestrator.Tests/TestOrchestratorFactory.cs`
   - `/Users/tidus4400/Projects/Karakuri/tests/AutomationPlatform.Orchestrator.Tests/OrchestratorApiIntegrationTests.cs`
@@ -160,8 +164,8 @@ dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator -
 ## Recommended next engineering steps
 
 1. Replace `AppStore` JSON domain persistence with EF Core/PostgreSQL domain DbContext.
-2. Implement the actual runner agent (`AutomationPlatform.Runner`) to satisfy the spec (registration/pull/execute/logging/local endpoints).
-3. Add cancellation endpoint/wiring for running jobs.
+2. Add cancellation endpoint/wiring for running jobs.
+3. Replace `AppStore` JSON domain persistence with EF Core/PostgreSQL domain DbContext.
 4. Tighten web auth (use actual cookie auth forwarding instead of `X-User-*` fallback for cross-process dev).
 
 ## Known design tradeoffs
