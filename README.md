@@ -1,12 +1,12 @@
-# AutomationPlatform (Blazor + Orchestrator + Runner)
+# tidus4400.Karakuri (Blazor + Orchestrator + Runner)
 
-AutomationPlatform is a local MVP automation platform inspired by simplified PowerApps/Alteryx-style flow orchestration.
+tidus4400.Karakuri is a local MVP automation platform inspired by simplified PowerApps/Alteryx-style flow orchestration.
 
 It includes:
-- `AutomationPlatform.Orchestrator` (Minimal API + SignalR hub + auth + runner control)
-- `AutomationPlatform.Web` (Blazor Server UI with custom CSS Grid UI, no external UI libs)
-- `AutomationPlatform.Runner` (runner agent worker/console with local status endpoints and HMAC-signed pull protocol)
-- `AutomationPlatform.Shared` (DTOs / flow definition / enums / HMAC helper)
+- `tidus4400.Karakuri.Orchestrator` (Minimal API + SignalR hub + auth + runner control)
+- `tidus4400.Karakuri.Web` (Blazor Server UI with custom CSS Grid UI, no external UI libs)
+- `tidus4400.Karakuri.Runner` (runner agent worker/console with local status endpoints and HMAC-signed pull protocol)
+- `tidus4400.Karakuri.Shared` (DTOs / flow definition / enums / HMAC helper)
 
 ## Important MVP notes
 
@@ -16,25 +16,25 @@ This repository was built in an offline package environment originally; package 
 - Authentication uses ASP.NET Core Identity + EF stores (PostgreSQL via `Npgsql`)
 - The web app subscribes to the orchestrator SignalR hub for live updates
 - EF migrations are scaffolded for both contexts:
-  - `/src/AutomationPlatform.Orchestrator/Migrations/Auth`
-  - `/src/AutomationPlatform.Orchestrator/Migrations/Platform`
+  - `/src/tidus4400.Karakuri.Orchestrator/Migrations/Auth`
+  - `/src/tidus4400.Karakuri.Orchestrator/Migrations/Platform`
 
 Implementation detail (temporary but functional):
-- API endpoints still route through `/src/AutomationPlatform.Orchestrator/AppStore.cs`, which is now an EF-backed facade over `PlatformDbContext`
+- API endpoints still route through `/src/tidus4400.Karakuri.Orchestrator/AppStore.cs`, which is now an EF-backed facade over `PlatformDbContext`
 - Domain writes currently persist by rewriting the in-memory snapshot to the domain tables (simple MVP approach, not optimized)
 
 ## Repository layout
 
 ```text
-AutomationPlatform.sln
+tidus4400.Karakuri.sln
 README.md
 /docker
   docker-compose.yml
 /src
-  AutomationPlatform.Shared
-  AutomationPlatform.Orchestrator
-  AutomationPlatform.Web
-  AutomationPlatform.Runner
+  tidus4400.Karakuri.Shared
+  tidus4400.Karakuri.Orchestrator
+  tidus4400.Karakuri.Web
+  tidus4400.Karakuri.Runner
 ```
 
 ## Seeded users
@@ -92,14 +92,14 @@ Terminal A (Orchestrator):
 
 ```bash
 cd /Users/tidus4400/Projects/Karakuri
-dotnet run --project /Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Orchestrator --urls http://localhost:5010
+dotnet run --project /Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Orchestrator --urls http://localhost:5010
 ```
 
 Terminal B (Web UI):
 
 ```bash
 cd /Users/tidus4400/Projects/Karakuri
-dotnet run --project /Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web --urls http://localhost:5020
+dotnet run --project /Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Web --urls http://localhost:5020
 ```
 
 Open:
@@ -123,7 +123,7 @@ Open:
 
 Update runner config:
 
-File: `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/appsettings.json`
+File: `/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner/appsettings.json`
 
 Set:
 - `Runner:ServerUrl` to `http://localhost:5010`
@@ -134,7 +134,7 @@ Then run:
 
 ```bash
 cd /Users/tidus4400/Projects/Karakuri
-dotnet run --project /Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner
+dotnet run --project /Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner
 ```
 
 What happens:
@@ -223,8 +223,8 @@ You can run the runner as a Windows service after publishing.
 Example (PowerShell, admin):
 
 ```powershell
-sc.exe create AutomationPlatformRunner binPath= "C:\path\to\AutomationPlatform.Runner.exe"
-sc.exe start AutomationPlatformRunner
+sc.exe create tidus4400.KarakuriRunner binPath= "C:\path\to\tidus4400.Karakuri.Runner.exe"
+sc.exe start tidus4400.KarakuriRunner
 ```
 
 Notes:
@@ -245,10 +245,10 @@ Example plist (`~/Library/LaunchAgents/com.local.automationplatform.runner.plist
     <key>ProgramArguments</key>
     <array>
       <string>/usr/local/share/dotnet/dotnet</string>
-      <string>/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner/bin/Debug/net10.0/AutomationPlatform.Runner.dll</string>
+      <string>/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner/bin/Debug/net10.0/tidus4400.Karakuri.Runner.dll</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Runner</string>
+    <string>/Users/tidus4400/Projects/Karakuri/src/tidus4400.Karakuri.Runner</string>
     <key>RunAtLoad</key>
     <true />
     <key>KeepAlive</key>
@@ -272,7 +272,7 @@ launchctl unload ~/Library/LaunchAgents/com.local.automationplatform.runner.plis
 
 ```bash
 cd /Users/tidus4400/Projects/Karakuri
-dotnet build /Users/tidus4400/Projects/Karakuri/AutomationPlatform.sln -p:NuGetAudit=false
+dotnet build /Users/tidus4400/Projects/Karakuri/tidus4400.Karakuri.sln -p:NuGetAudit=false
 ```
 
 ## EF migration tooling (auth + domain DB)
@@ -284,7 +284,7 @@ Examples:
 ```bash
 cd /Users/tidus4400/Projects/Karakuri
 dotnet tool restore
-dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator --startup-project src/AutomationPlatform.Orchestrator --context AuthIdentityDbContext
-dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator --startup-project src/AutomationPlatform.Orchestrator --context PlatformDbContext
+dotnet dotnet-ef migrations list --project src/tidus4400.Karakuri.Orchestrator --startup-project src/tidus4400.Karakuri.Orchestrator --context AuthIdentityDbContext
+dotnet dotnet-ef migrations list --project src/tidus4400.Karakuri.Orchestrator --startup-project src/tidus4400.Karakuri.Orchestrator --context PlatformDbContext
 ```
 The orchestrator applies both auth and domain migrations on startup (`Database.Migrate()` for each DbContext).

@@ -1,24 +1,24 @@
 services:
   postgres:
     image: postgres:16
-    container_name: automationplatform-postgres
+    container_name: karakuri-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: automation
       POSTGRES_PASSWORD: automation
-      POSTGRES_DB: automationplatform
+      POSTGRES_DB: karakuri
     ports:
       - "5432:5432"
     volumes:
-      - automationplatform_pgdata:/var/lib/postgresql/data
+      - karakuri_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U automation -d automationplatform"]
+      test: ["CMD-SHELL", "pg_isready -U automation -d karakuri"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   orchestrator:
-    container_name: automationplatform-orchestrator
+    container_name: karakuri-orchestrator
     build:
       context: .
       dockerfile: docker/Dockerfile.orchestrator
@@ -26,7 +26,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=automationplatform;Username=automation;Password=automation
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=karakuri;Username=automation;Password=automation
     ports:
       - "5010:8080"
     depends_on:
@@ -34,7 +34,7 @@ services:
         condition: service_healthy
 
   web:
-    container_name: automationplatform-web
+    container_name: karakuri-web
     build:
       context: .
       dockerfile: docker/Dockerfile.web
@@ -50,7 +50,7 @@ services:
         condition: service_started
 
   runner:
-    container_name: automationplatform-runner
+    container_name: karakuri-runner
     build:
       context: .
       dockerfile: docker/Dockerfile.runner
@@ -63,11 +63,11 @@ services:
       Runner__Tags: docker
       Runner__CredentialFile: /data/runner.credentials.json
     volumes:
-      - automationplatform_runnerdata:/data
+      - karakuri_runnerdata:/data
     depends_on:
       orchestrator:
         condition: service_started
 
 volumes:
-  automationplatform_pgdata:
-  automationplatform_runnerdata:
+  karakuri_pgdata:
+  karakuri_runnerdata:
