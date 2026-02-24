@@ -48,6 +48,17 @@ public sealed class RunProcessExecutorTests
         Assert.True(result.StdOut.Length <= 64 * 1024);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ExternalCancellation_ThrowsOperationCanceled()
+    {
+        var executor = new RunProcessExecutor(NullLogger<RunProcessExecutor>.Instance);
+        var node = CreateRunProcessNode(ShellPath(), ShellSleepArgs(3));
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(150));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executor.ExecuteAsync(node, cts.Token));
+    }
+
     private static NodeDto CreateRunProcessNode(string path, string args, int? timeoutSec = null)
     {
         var config = new Dictionary<string, object?>

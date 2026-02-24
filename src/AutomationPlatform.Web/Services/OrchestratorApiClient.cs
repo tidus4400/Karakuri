@@ -78,6 +78,9 @@ public sealed class OrchestratorApiClient(HttpClient httpClient, ApiSessionState
     public Task<List<JobLogDto>> GetJobLogsAsync(Guid id, int skip, int take, CancellationToken ct = default)
         => SendAsync<List<JobLogDto>>(HttpMethod.Get, $"api/jobs/{id}/logs?skip={skip}&take={take}", null, ct);
 
+    public Task<JobDto> CancelJobAsync(Guid id, CancellationToken ct = default)
+        => SendAsync<JobDto>(HttpMethod.Post, $"api/jobs/{id}/cancel", new { }, ct);
+
     public Task<List<RunnerDto>> GetRunnersAsync(CancellationToken ct = default)
         => SendAsync<List<RunnerDto>>(HttpMethod.Get, "api/runners", null, ct);
 

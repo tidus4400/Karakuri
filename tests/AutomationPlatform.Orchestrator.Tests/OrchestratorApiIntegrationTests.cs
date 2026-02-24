@@ -201,4 +201,62 @@ public sealed class OrchestratorApiIntegrationTests
         Assert.Contains(details.Logs, l => l.Message == "step done");
         Assert.True(pagedLogs.Count >= 2);
     }
+
+    [Fact]
+    public async Task CancelRequest_RunnerPollsCancelStatus_AndMarksJobCanceled()
+    {
+        using var factory = new TestOrchestratorFactory();
+        using var adminClient = factory.CreateClient();
+        using var runnerClient = factory.CreateClient();
+
+        await adminClient.LoginAsync("admin@local", "Admin123!");
+
+        var token = await adminClient.CreateTokenAsync();
+        var agent = await runnerClient.RegisterAgentAsync(token.Token, "runner-cancel");
+
+        var flow = await adminClient.CreateFlowAsync("Flow Cancel");
+        var runResponse = await adminClient.PostAsJsonAsync($"/api/flows/{flow.Id}/run", new RunFlowRequest());
+        var job = await runResponse.ReadJsonAsync<JobDto>();
+
+        var pullRequest = ApiTestHelpers.CreateSignedRequest(
+            HttpMethod.Get,
+            $"/api/agents/{agent.AgentId}/jobs/next?waitSeconds=1",
+            agent.AgentId,
+            agent.AgentSecret);
+        var pullResponse = await runnerClient.SendAsync(pullRequest);
+        var payload = await pullResponse.ReadJsonAsync<JobExecutionPayloadDto>();
+        Assert.Equal(job.Id, payload.JobId);
+
+        var cancelResponse = await adminClient.PostAsync($"/api/jobs/{job.Id}/cancel", null);
+        var canceledRequestedJob = await cancelResponse.ReadJsonAsync<JobDto>();
+        Assert.True(canceledRequestedJob.CancelRequested);
+
+        var cancelStatusRequest = ApiTestHelpers.CreateSignedRequest(
+            HttpMethod.Get,
+            $"/api/jobs/{job.Id}/cancel-status",
+            agent.AgentId,
+            agent.AgentSecret);
+        var cancelStatusResponse = await runnerClient.SendAsync(cancelStatusRequest);
+        var cancelStatus = await cancelStatusResponse.ReadJsonAsync<JobCancelStatusDto>();
+        Assert.True(cancelStatus.CancelRequested);
+
+        var canceledCompleteRequest = ApiTestHelpers.CreateSignedRequest(
+            HttpMethod.Post,
+            $"/api/jobs/{job.Id}/canceled",
+            agent.AgentId,
+            agent.AgentSecret,
+            new JobCanceledRequest { Reason = "Canceled during test" });
+        var canceledCompleteResponse = await runnerClient.SendAsync(canceledCompleteRequest);
+        var canceledJob = await canceledCompleteResponse.ReadJsonAsync<JobDto>();
+        Assert.Equal(JobStatus.Canceled, canceledJob.Status);
+        Assert.True(canceledJob.CancelRequested);
+
+        var details = await (await adminClient.GetAsync($"/api/jobs/{job.Id}")).ReadJsonAsync<JobDetailsDto>();
+        Assert.Equal(JobStatus.Canceled, details.Job.Status);
+        Assert.True(details.Job.CancelRequested);
+        Assert.Single(details.Steps);
+        Assert.Equal(StepStatus.Canceled, details.Steps[0].Status);
+        Assert.Contains(details.Logs, l => l.Message.Contains("Cancel requested", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(details.Logs, l => l.Message.Contains("Canceled during test", StringComparison.OrdinalIgnoreCase));
+    }
 }

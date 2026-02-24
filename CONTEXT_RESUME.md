@@ -1,6 +1,6 @@
 # AutomationPlatform Resume Context (for Codex / GH Copilot)
 
-Last updated: 2026-02-23
+Last updated: 2026-02-24
 Workspace: `/Users/tidus4400/Projects/Karakuri`
 
 ## Current status
@@ -34,6 +34,7 @@ Implemented and compiling:
 - Identity EF migration scaffolding added
 - Automated tests added across shared/orchestrator/runner projects
 - Runner agent implementation added (registration, HMAC signing, heartbeat, long-poll, `RunProcess` execution, local status endpoints)
+- End-to-end cancel support added (user cancel request endpoint, runner cancel polling + process kill + canceled completion endpoint, UI cancel action)
 
 ## Testing suite (added)
 
@@ -51,6 +52,7 @@ Coverage highlights:
   - `RunProcessExecutor` success case
   - `RunProcessExecutor` timeout behavior
   - bounded stdout capture/truncation
+  - external cancellation token path (kills process / throws cancellation)
 - Orchestrator tests:
   - `FlowOrdering` topo sort + cycle fallback
   - integration tests with `WebApplicationFactory<Program>`
@@ -63,12 +65,19 @@ Coverage highlights:
   - HMAC heartbeat validation
   - flow version save, manual run, runner pull
   - job events + complete + details/log paging
+  - cancel flow: user cancel request -> runner cancel-status poll -> runner canceled callback -> job/steps/logs show canceled
 
 Current test command/status:
 ```bash
 dotnet test /Users/tidus4400/Projects/Karakuri/AutomationPlatform.sln -p:NuGetAudit=false
 ```
 - Passes: `20` tests total (`10` shared, `3` runner, `7` orchestrator)
+- Passes: `22` tests total (`10` shared, `4` runner, `8` orchestrator)
+
+Latest coverage snapshots (Cobertura, local run on 2026-02-24):
+- Shared tests package coverage (`AutomationPlatform.Shared`): line-rate `0.4009`, branch-rate `0.8333`
+- Runner tests package coverage (`AutomationPlatform.Runner`): line-rate `0.1225`, branch-rate `0.1193`
+- Orchestrator tests package coverage (`AutomationPlatform.Orchestrator`): line-rate `0.5020`, branch-rate `0.4784`
 
 ## Important remaining gaps (still fallback / incomplete)
 
@@ -79,7 +88,7 @@ Identity/auth persistence is EF/PostgreSQL, but core domain persistence is not y
 
 Runner is implemented for the MVP pull protocol, but gaps remain:
 - only built-in `RunProcess` block is supported
-- cancellation is still step-boundary only (no end-to-end cancel endpoint wiring yet)
+- cancellation is now end-to-end for running `RunProcess` steps via cancel polling, but there is still no dedicated UI/endpoint for bulk canceling queued/running jobs from the jobs list page
 
 ## Key files
 
@@ -109,6 +118,8 @@ Runner is implemented for the MVP pull protocol, but gaps remain:
 - Test harness / integration factory:
   - `/Users/tidus4400/Projects/Karakuri/tests/AutomationPlatform.Orchestrator.Tests/TestOrchestratorFactory.cs`
   - `/Users/tidus4400/Projects/Karakuri/tests/AutomationPlatform.Orchestrator.Tests/OrchestratorApiIntegrationTests.cs`
+- Web job details cancel UI:
+  - `/Users/tidus4400/Projects/Karakuri/src/AutomationPlatform.Web/Components/Pages/JobDetails.razor`
 
 ## Package state (NuGet now available)
 
@@ -136,6 +147,11 @@ Local EF tool manifest exists:
 - Web connects to orchestrator SignalR hub using header-based auth fallback (`X-User-*`) from current UI session state
 - API cookie auth now returns proper `403` for `/api/*` access-denied instead of redirecting to a missing page
 - Runner HMAC validation now works for JSON-body POSTs because request buffering is enabled before model binding and the validator rewinds before hashing
+- Orchestrator now supports:
+  - `POST /api/jobs/{id}/cancel` (user/admin cancel request)
+  - `GET /api/jobs/{jobId}/cancel-status` (runner HMAC)
+  - `POST /api/jobs/{jobId}/canceled` (runner HMAC canceled completion)
+- Runner now polls cancel status while executing `RunProcess` and kills the process on cancel request
 
 ## Commands used frequently
 
@@ -164,8 +180,8 @@ dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator -
 ## Recommended next engineering steps
 
 1. Replace `AppStore` JSON domain persistence with EF Core/PostgreSQL domain DbContext.
-2. Add cancellation endpoint/wiring for running jobs.
-3. Replace `AppStore` JSON domain persistence with EF Core/PostgreSQL domain DbContext.
+2. Replace `AppStore` JSON domain persistence with EF Core/PostgreSQL domain DbContext.
+3. Add jobs-list page bulk/actions UX for cancel/retry and permissions polish.
 4. Tighten web auth (use actual cookie auth forwarding instead of `X-User-*` fallback for cross-process dev).
 
 ## Known design tradeoffs

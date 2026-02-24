@@ -119,6 +119,25 @@ public sealed class RunnerState
         }
     }
 
+    public void MarkJobCanceled(Guid jobId, string? reason = null)
+    {
+        lock (_gate)
+        {
+            if (CurrentJobId == jobId)
+            {
+                CurrentJobId = null;
+                CurrentJobName = null;
+            }
+            RunningJobs = 0;
+            LastStatusMessage = "Idle";
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                LastError = reason;
+                LastErrorAt = DateTimeOffset.UtcNow;
+            }
+        }
+    }
+
     public void SetStatus(string message)
     {
         lock (_gate)
