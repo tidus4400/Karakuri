@@ -27,11 +27,8 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=automationplatform;Username=automation;Password=automation
-      Store__FilePath: /data/store.json
     ports:
       - "5010:8080"
-    volumes:
-      - automationplatform_store:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,5 +70,4 @@ services:
 
 volumes:
   automationplatform_pgdata:
-  automationplatform_store:
   automationplatform_runnerdata:

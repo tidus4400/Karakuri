@@ -13,7 +13,7 @@ internal sealed class TestOrchestratorFactory : WebApplicationFactory<Program>
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "automationplatform-tests", Guid.NewGuid().ToString("N"));
     private string AuthDbPath => Path.Combine(_tempDir, "auth.db");
-    internal string StorePath => Path.Combine(_tempDir, "store.json");
+    private string DomainDbPath => Path.Combine(_tempDir, "platform.db");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -24,8 +24,9 @@ internal sealed class TestOrchestratorFactory : WebApplicationFactory<Program>
             var values = new Dictionary<string, string?>
             {
                 ["Auth:DbInitMode"] = "EnsureCreated",
-                ["Store:FilePath"] = StorePath,
-                ["ConnectionStrings:DefaultConnection"] = $"Data Source={AuthDbPath}"
+                ["Domain:DbInitMode"] = "EnsureCreated",
+                ["ConnectionStrings:DefaultConnection"] = $"Data Source={AuthDbPath}",
+                ["ConnectionStrings:PlatformConnection"] = $"Data Source={DomainDbPath}"
             };
             config.AddInMemoryCollection(values);
         });
@@ -36,9 +37,14 @@ internal sealed class TestOrchestratorFactory : WebApplicationFactory<Program>
             services.RemoveAll(typeof(IDbContextOptionsConfiguration<AuthIdentityDbContext>));
             services.RemoveAll(typeof(DbContextOptions<AuthIdentityDbContext>));
             services.RemoveAll(typeof(AuthIdentityDbContext));
+            services.RemoveAll(typeof(IDbContextOptionsConfiguration<PlatformDbContext>));
+            services.RemoveAll(typeof(DbContextOptions<PlatformDbContext>));
+            services.RemoveAll(typeof(PlatformDbContext));
 
             services.AddDbContext<AuthIdentityDbContext>(options =>
                 options.UseSqlite($"Data Source={AuthDbPath}"));
+            services.AddDbContext<PlatformDbContext>(options =>
+                options.UseSqlite($"Data Source={DomainDbPath}"));
         });
     }
 

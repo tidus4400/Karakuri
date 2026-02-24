@@ -17,6 +17,7 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 });
 var authConnectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Port=5432;Database=automationplatform;Username=automation;Password=automation";
+var platformConnectionString = builder.Configuration.GetConnectionString("PlatformConnection") ?? authConnectionString;
 var authProvider = builder.Configuration["Auth:Provider"] ?? "Postgres";
 builder.Services.AddDbContext<AuthIdentityDbContext>(options =>
 {
@@ -27,6 +28,24 @@ builder.Services.AddDbContext<AuthIdentityDbContext>(options =>
     else
     {
         options.UseNpgsql(authConnectionString);
+    }
+});
+var domainProvider = builder.Configuration["Domain:Provider"] ?? authProvider;
+builder.Services.AddDbContext<PlatformDbContext>(options =>
+{
+    if (string.Equals(domainProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
+    {
+        options.UseSqlite(platformConnectionString, sqlite =>
+        {
+            sqlite.MigrationsHistoryTable("__EFMigrationsHistoryPlatform");
+        });
+    }
+    else
+    {
+        options.UseNpgsql(platformConnectionString, npgsql =>
+        {
+            npgsql.MigrationsHistoryTable("__EFMigrationsHistoryPlatform");
+        });
     }
 });
 builder.Services.AddIdentity<IdentityAppUser, IdentityRole>(options =>
@@ -92,12 +111,12 @@ app.Use(async (ctx, next) =>
 app.UseAuthentication();
 app.UseAuthorization();
 
-var store = app.Services.GetRequiredService<AppStore>();
-await store.InitializeAsync();
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var authDb = scope.ServiceProvider.GetRequiredService<AuthIdentityDbContext>();
+    var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
     var authDbInitMode = builder.Configuration["Auth:DbInitMode"] ?? "Migrate";
+    var domainDbInitMode = builder.Configuration["Domain:DbInitMode"] ?? "Migrate";
     if (string.Equals(authDbInitMode, "EnsureCreated", StringComparison.OrdinalIgnoreCase))
     {
         await authDb.Database.EnsureCreatedAsync();
@@ -106,10 +125,20 @@ await using (var scope = app.Services.CreateAsyncScope())
     {
         await authDb.Database.MigrateAsync();
     }
+    if (string.Equals(domainDbInitMode, "EnsureCreated", StringComparison.OrdinalIgnoreCase))
+    {
+        await platformDb.Database.EnsureCreatedAsync();
+    }
+    else
+    {
+        await platformDb.Database.MigrateAsync();
+    }
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityAppUser>>();
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     await SeedIdentityAsync(userManager, roleManager);
 }
+var store = app.Services.GetRequiredService<AppStore>();
+await store.InitializeAsync();
 
 app.MapGet("/", () => Results.Redirect("/api/health"));
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", utc = DateTimeOffset.UtcNow }));

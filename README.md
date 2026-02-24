@@ -8,17 +8,20 @@ It includes:
 - `AutomationPlatform.Runner` (runner agent worker/console with local status endpoints and HMAC-signed pull protocol)
 - `AutomationPlatform.Shared` (DTOs / flow definition / enums / HMAC helper)
 
-## Important MVP notes (environment-driven deviations)
+## Important MVP notes
 
-This repository was built in an offline package environment originally; package restore is now enabled again and the solution uses the proper Identity EF + SignalR client libraries. One major fallback remains to keep the MVP stable:
+This repository was built in an offline package environment originally; package restore is now enabled again and the solution now uses the intended runtime stack:
 
-1. Domain persistence fallback:
-- The orchestrator currently uses a file-backed JSON store (`/src/AutomationPlatform.Orchestrator/data/store.json`) instead of EF Core + SQL provider runtime.
-- Entity shapes and API contracts are still aligned to the requested model.
-- `docker/docker-compose.yml` (PostgreSQL) is included for the intended database deployment target.
-- Authentication now uses ASP.NET Core Identity + EF stores (PostgreSQL via `Npgsql`).
-- The web app now subscribes to the orchestrator SignalR hub for live updates.
-- Identity auth migrations are scaffolded in `/src/AutomationPlatform.Orchestrator/Migrations/Auth`.
+- Domain persistence uses EF Core + PostgreSQL (via `PlatformDbContext`)
+- Authentication uses ASP.NET Core Identity + EF stores (PostgreSQL via `Npgsql`)
+- The web app subscribes to the orchestrator SignalR hub for live updates
+- EF migrations are scaffolded for both contexts:
+  - `/src/AutomationPlatform.Orchestrator/Migrations/Auth`
+  - `/src/AutomationPlatform.Orchestrator/Migrations/Platform`
+
+Implementation detail (temporary but functional):
+- API endpoints still route through `/src/AutomationPlatform.Orchestrator/AppStore.cs`, which is now an EF-backed facade over `PlatformDbContext`
+- Domain writes currently persist by rewriting the in-memory snapshot to the domain tables (simple MVP approach, not optimized)
 
 ## Repository layout
 
@@ -62,16 +65,16 @@ URLs:
 - PostgreSQL: `localhost:5432`
 
 Notes:
-- The orchestrator uses PostgreSQL for Identity/auth and a mounted JSON file volume for flow/job/runner domain data (`/data/store.json`).
+- The orchestrator uses PostgreSQL for both Identity/auth and domain persistence.
 - The runner container implements registration, HMAC heartbeat/polling, and `RunProcess` execution, but `Runner__RegistrationToken` is blank by default in compose.
 - After creating a token in the UI, either:
   - restart the `runner` service with `Runner__RegistrationToken` set, or
   - run a one-off registration/execution container: `docker compose run --rm -e Runner__RegistrationToken=YOUR_TOKEN runner`
 - If no token is configured, the runner starts and waits/retries until a token is provided.
 
-## 1. Start DB (PostgreSQL target)
+## 1. Start DB (PostgreSQL)
 
-A PostgreSQL compose file is included (target architecture for later DB-backed persistence):
+A PostgreSQL compose file is included (runtime requirement for the orchestrator in this build):
 
 ```bash
 cd /Users/tidus4400/Projects/Karakuri/docker
@@ -79,8 +82,7 @@ docker compose up -d
 ```
 
 Note:
-- PostgreSQL is now required for Identity/auth storage on startup.
-- Flow/job/runner domain data is still stored in the JSON file store in this iteration.
+- PostgreSQL is required for both Identity/auth and flow/job/runner domain persistence on startup.
 
 ## 2. Run Orchestrator and Web
 
@@ -273,7 +275,7 @@ cd /Users/tidus4400/Projects/Karakuri
 dotnet build /Users/tidus4400/Projects/Karakuri/AutomationPlatform.sln -p:NuGetAudit=false
 ```
 
-## EF migration tooling (auth DB)
+## EF migration tooling (auth + domain DB)
 
 A local `dotnet-ef` tool manifest is included (`/Users/tidus4400/Projects/Karakuri/dotnet-tools.json`).
 
@@ -283,5 +285,6 @@ Examples:
 cd /Users/tidus4400/Projects/Karakuri
 dotnet tool restore
 dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator --startup-project src/AutomationPlatform.Orchestrator --context AuthIdentityDbContext
+dotnet dotnet-ef migrations list --project src/AutomationPlatform.Orchestrator --startup-project src/AutomationPlatform.Orchestrator --context PlatformDbContext
 ```
-The orchestrator applies Identity auth migrations on startup (`Database.Migrate()`).
+The orchestrator applies both auth and domain migrations on startup (`Database.Migrate()` for each DbContext).
