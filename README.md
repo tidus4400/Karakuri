@@ -63,8 +63,11 @@ URLs:
 
 Notes:
 - The orchestrator uses PostgreSQL for Identity/auth and a mounted JSON file volume for flow/job/runner domain data (`/data/store.json`).
-- The current `AutomationPlatform.Runner` project in this repo is still the template worker (it starts in Docker but does not yet implement the runner-agent registration/pull protocol described in the target spec).
-- If you only want the usable services right now: `docker-compose up postgres orchestrator web`
+- The runner container implements registration, HMAC heartbeat/polling, and `RunProcess` execution, but `Runner__RegistrationToken` is blank by default in compose.
+- After creating a token in the UI, either:
+  - restart the `runner` service with `Runner__RegistrationToken` set, or
+  - run a one-off registration/execution container: `docker compose run --rm -e Runner__RegistrationToken=YOUR_TOKEN runner`
+- If no token is configured, the runner starts and waits/retries until a token is provided.
 
 ## 1. Start DB (PostgreSQL target)
 
@@ -137,6 +140,7 @@ What happens:
 - Receives `AgentId` + `AgentSecret`
 - Stores them in `runner.credentials.json`
 - Starts heartbeat + long-poll loop
+- Executes `RunProcess` steps sequentially and posts logs/events/completion back to orchestrator
 
 Runner local endpoints (Kestrel):
 - `GET http://127.0.0.1:5180/health`
