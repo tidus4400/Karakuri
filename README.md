@@ -141,6 +141,7 @@ What happens:
 - Stores them in `runner.credentials.json`
 - Starts heartbeat + long-poll loop
 - Executes `RunProcess` steps sequentially and posts logs/events/completion back to orchestrator
+- Supports user-triggered cancel requests (polls cancel status and kills running process when cancellation is requested)
 
 Runner local endpoints (Kestrel):
 - `GET http://127.0.0.1:5180/health`
@@ -195,6 +196,13 @@ The orchestrator validates:
 - signature
 - timestamp window (±300s)
 - agent enabled/existing
+
+## Job cancel support (implemented)
+
+- User/API can request cancellation: `POST /api/jobs/{id}/cancel`
+- Runner polls cancel status (HMAC): `GET /api/jobs/{jobId}/cancel-status`
+- Runner reports canceled completion (HMAC): `POST /api/jobs/{jobId}/canceled`
+- Web UI job details page includes a `Cancel Job` button for cancellable jobs (`Queued`, `Assigned`, `Running`)
 
 ## Manual acceptance checks (MVP)
 

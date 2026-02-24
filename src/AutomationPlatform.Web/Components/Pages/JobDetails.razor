@@ -24,6 +24,16 @@ else
             <AppCard Title="Runner"><div class="kpi-value" style="font-size:1rem">@(details.Job.AgentName ?? "Unassigned")</div><div class="muted small">Duration: @(details.Job.DurationMs?.ToString() ?? "-") ms</div></AppCard>
         </div>
 
+        <div class="row gap-sm" style="margin-bottom:.75rem;">
+            <AppButton Variant="danger" Disabled="@(!CanCancelJob || cancelBusy)" OnClick="CancelJobClicked">
+                @(cancelBusy ? "Canceling..." : "Cancel Job")
+            </AppButton>
+            @if (!string.IsNullOrWhiteSpace(actionMessage))
+            {
+                <span class="small muted">@actionMessage</span>
+            }
+        </div>
+
         <div class="split-grid">
             <AppCard Title="Steps">
                 @if (details.Steps.Count == 0)
@@ -58,6 +68,8 @@ else
     private string? error;
     private bool autoScroll = true;
     private ElementReference logContainer;
+    private bool cancelBusy;
+    private string? actionMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -94,6 +106,27 @@ else
     }
 
     private async Task Refresh(MouseEventArgs _) => await LoadAsync();
+    private async Task CancelJobClicked(MouseEventArgs _)
+    {
+        if (details is null || !CanCancelJob || cancelBusy) return;
+        try
+        {
+            cancelBusy = true;
+            actionMessage = null;
+            var updated = await Api.CancelJobAsync(Id);
+            details.Job = updated;
+            actionMessage = updated.Status == JobStatus.Canceled ? "Job canceled." : "Cancel requested.";
+        }
+        catch (Exception ex)
+        {
+            actionMessage = ex.Message;
+        }
+        finally
+        {
+            cancelBusy = false;
+            StateHasChanged();
+        }
+    }
     private void OnJobUpdated(JobDto job)
     {
         if (job.Id != Id) return;
@@ -131,6 +164,7 @@ else
     {
         JobStatus.Succeeded => "success",
         JobStatus.Failed => "error",
+        JobStatus.Canceled => "warn",
         JobStatus.Running => "info",
         JobStatus.Assigned => "warn",
         _ => "neutral"
@@ -140,9 +174,14 @@ else
     {
         StepStatus.Succeeded => "success",
         StepStatus.Failed => "error",
+        StepStatus.Canceled => "warn",
         StepStatus.Running => "info",
         _ => "neutral"
     };
+
+    private bool CanCancelJob => details?.Job is { } job &&
+        !job.CancelRequested &&
+        (job.Status is JobStatus.Queued or JobStatus.Assigned or JobStatus.Running);
 
     private bool EnsureAuthenticated()
     {

@@ -159,6 +159,12 @@ public sealed class RunnerEngine(
             {
                 ct.ThrowIfCancellationRequested();
 
+                if (await IsJobCancelRequestedAsync(credentials, payload.JobId, ct))
+                {
+                    await CancelJobBeforeStepAsync(credentials, payload, node, ct);
+                    return;
+                }
+
                 var startEvents = new List<JobEventDto>
                 {
                     new()
@@ -177,7 +183,33 @@ public sealed class RunnerEngine(
                     throw new InvalidOperationException($"Unsupported block type: {node.BlockType}");
                 }
 
-                var result = await processExecutor.ExecuteAsync(node, ct);
+                var cancelMonitorTriggered = false;
+                using var stepCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                using var monitorCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                var monitorTask = MonitorJobCancellationAsync(
+                    credentials,
+                    payload.JobId,
+                    stepCts,
+                    monitorCts.Token,
+                    onCancelTriggered: () => cancelMonitorTriggered = true);
+
+                RunProcessResult result;
+                try
+                {
+                    result = await processExecutor.ExecuteAsync(node, stepCts.Token);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested && cancelMonitorTriggered)
+                {
+                    monitorCts.Cancel();
+                    try { await monitorTask; } catch { }
+                    await CancelRunningJobAsync(credentials, payload, node, ct);
+                    return;
+                }
+                finally
+                {
+                    monitorCts.Cancel();
+                    try { await monitorTask; } catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+                }
 
                 var outputJson = JsonSerializer.Serialize(new
                 {
@@ -244,6 +276,76 @@ public sealed class RunnerEngine(
                 logger.LogWarning(failEx, "Failed to notify orchestrator of job failure");
             }
         }
+    }
+
+    private async Task<bool> IsJobCancelRequestedAsync(RunnerCredentials credentials, Guid jobId, CancellationToken ct)
+    {
+        try
+        {
+            var status = await orchestratorClient.GetCancelStatusAsync(credentials, jobId, ct);
+            return status.CancelRequested || status.Status == JobStatus.Canceled;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Cancel status check failed for job {JobId}", jobId);
+            return false;
+        }
+    }
+
+    private async Task MonitorJobCancellationAsync(
+        RunnerCredentials credentials,
+        Guid jobId,
+        CancellationTokenSource stepCts,
+        CancellationToken monitorToken,
+        Action onCancelTriggered)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(monitorToken))
+            {
+                if (await IsJobCancelRequestedAsync(credentials, jobId, monitorToken))
+                {
+                    onCancelTriggered();
+                    stepCts.Cancel();
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (monitorToken.IsCancellationRequested)
+        {
+            // Normal shutdown.
+        }
+    }
+
+    private async Task CancelRunningJobAsync(RunnerCredentials credentials, JobExecutionPayloadDto payload, NodeDto node, CancellationToken ct)
+    {
+        var events = new List<JobEventDto>
+        {
+            new()
+            {
+                NodeId = node.NodeId,
+                BlockType = node.BlockType,
+                StepStatus = StepStatus.Canceled,
+                Message = $"{node.DisplayName} canceled",
+                Level = LogLevelKind.Warning
+            }
+        };
+        await orchestratorClient.PostEventsAsync(credentials, payload.JobId, events, ct);
+        await orchestratorClient.CancelJobAsync(credentials, payload.JobId, "Canceled during step execution", ct);
+        state.MarkJobCanceled(payload.JobId, "Canceled");
+        logger.LogInformation("Job {JobId} canceled during step {NodeId}", payload.JobId, node.NodeId);
+    }
+
+    private async Task CancelJobBeforeStepAsync(RunnerCredentials credentials, JobExecutionPayloadDto payload, NodeDto node, CancellationToken ct)
+    {
+        await orchestratorClient.CancelJobAsync(credentials, payload.JobId, "Canceled before next step execution", ct);
+        state.MarkJobCanceled(payload.JobId, "Canceled");
+        logger.LogInformation("Job {JobId} canceled before starting step {NodeId}", payload.JobId, node.NodeId);
     }
 
     private static IEnumerable<JobEventDto> ToLineEvents(NodeDto node, string text, LogLevelKind level)

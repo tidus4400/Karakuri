@@ -77,6 +77,18 @@ public sealed class JobFailRequest
     public string Error { get; set; } = string.Empty;
 }
 
+public sealed class JobCanceledRequest
+{
+    public string? Reason { get; set; }
+}
+
+public sealed class JobCancelStatusDto
+{
+    public Guid JobId { get; set; }
+    public bool CancelRequested { get; set; }
+    public JobStatus Status { get; set; }
+}
+
 public sealed class JobExecutionPayloadDto
 {
     public Guid JobId { get; set; }

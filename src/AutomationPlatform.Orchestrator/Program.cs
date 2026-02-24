@@ -523,6 +523,65 @@ api.MapGet("/jobs/{id:guid}/logs", async (HttpContext http, AppStore appStore, G
     return result;
 });
 
+api.MapPost("/jobs/{id:guid}/cancel", async (HttpContext http, AppStore appStore, IHubContext<MonitoringHub> hub, Guid id, CancellationToken ct) =>
+{
+    var current = http.GetCurrentUser();
+    if (current is null) return Results.Unauthorized();
+
+    var (error, jobDto, logDto) = await appStore.WriteAsync(state =>
+    {
+        var job = state.Jobs.FirstOrDefault(j => j.Id == id);
+        if (job is null) return (Results.NotFound() as IResult, (JobDto?)null, (JobLogDto?)null);
+        if (!current.Value.IsAdmin && job.RequestedByUserId != current.Value.UserId) return (Results.Forbid() as IResult, (JobDto?)null, (JobLogDto?)null);
+
+        var now = DateTimeOffset.UtcNow;
+        JobLogEntity? log = null;
+
+        if (job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Canceled)
+        {
+            return ((IResult?)null, job.ToJobDto(state), (JobLogDto?)null);
+        }
+
+        if (!job.CancelRequested)
+        {
+            job.CancelRequested = true;
+            log = new JobLogEntity
+            {
+                Id = state.NextJobLogId++,
+                JobId = job.Id,
+                Timestamp = now,
+                Level = LogLevelKind.Warning,
+                Message = $"Cancel requested by {(current.Value.IsAdmin ? "admin" : "user")} {current.Value.Email}"
+            };
+            state.JobLogs.Add(log);
+        }
+
+        if (job.Status is JobStatus.Queued or JobStatus.Assigned)
+        {
+            job.Status = JobStatus.Canceled;
+            job.FinishedAt = now;
+            job.DurationMs = job.StartedAt.HasValue ? (long)(now - job.StartedAt.Value).TotalMilliseconds : null;
+            job.ResultSummary = "Canceled before execution";
+
+            foreach (var step in state.JobSteps.Where(s => s.JobId == job.Id))
+            {
+                if (step.Status is StepStatus.Pending or StepStatus.Running)
+                {
+                    step.Status = StepStatus.Canceled;
+                    step.FinishedAt ??= now;
+                }
+            }
+        }
+
+        return ((IResult?)null, job.ToJobDto(state), log?.ToLogDto());
+    }, ct);
+
+    if (error is not null) return error;
+    if (logDto is not null) await hub.PublishJobLogAppendedAsync(id, logDto);
+    await hub.PublishJobUpdatedAsync(jobDto!);
+    return Results.Ok(jobDto);
+});
+
 // Admin runners/tokens
 api.MapGet("/runners", async (HttpContext http, AppStore appStore, CancellationToken ct) =>
 {
@@ -762,6 +821,28 @@ api.MapGet("/agents/{agentId:guid}/jobs/next", async (HttpContext http, AppStore
     return Results.NoContent();
 });
 
+api.MapGet("/jobs/{jobId:guid}/cancel-status", async (HttpContext http, AppStore appStore, Guid jobId, CancellationToken ct) =>
+{
+    var auth = await RunnerHmacValidator.ValidateAsync(http, appStore, null, ct);
+    if (!auth.IsValid) return auth.Failure!;
+
+    var result = await appStore.ReadAsync<IResult>(state =>
+    {
+        var job = state.Jobs.FirstOrDefault(j => j.Id == jobId);
+        if (job is null) return Results.NotFound();
+        if (job.AgentId != auth.AgentId) return Results.Forbid();
+
+        return Results.Ok(new JobCancelStatusDto
+        {
+            JobId = job.Id,
+            CancelRequested = job.CancelRequested,
+            Status = job.Status
+        });
+    }, ct);
+
+    return result;
+});
+
 api.MapPost("/jobs/{jobId:guid}/events", async (HttpContext http, AppStore appStore, IHubContext<MonitoringHub> hub, Guid jobId, JobEventsRequest request, CancellationToken ct) =>
 {
     var auth = await RunnerHmacValidator.ValidateAsync(http, appStore, null, ct);
@@ -889,6 +970,60 @@ api.MapPost("/jobs/{jobId:guid}/fail", async (HttpContext http, AppStore appStor
             Timestamp = now,
             Level = LogLevelKind.Error,
             Message = request.Error
+        };
+        state.JobLogs.Add(log);
+
+        var runner = state.RunnerAgents.FirstOrDefault(r => r.Id == auth.AgentId);
+        if (runner is not null)
+        {
+            runner.LastHeartbeatAt = now;
+            runner.Status = RunnerStatus.Online;
+        }
+
+        return ((IResult?)null, job.ToJobDto(state), runner?.ToDto(now), log.ToLogDto());
+    }, ct);
+
+    if (error is not null) return error;
+    if (logDto is not null) await hub.PublishJobLogAppendedAsync(jobId, logDto);
+    await hub.PublishJobUpdatedAsync(jobDto!);
+    if (runnerDto is not null) await hub.PublishRunnerUpdatedAsync(runnerDto);
+    return Results.Ok(jobDto);
+});
+
+api.MapPost("/jobs/{jobId:guid}/canceled", async (HttpContext http, AppStore appStore, IHubContext<MonitoringHub> hub, Guid jobId, JobCanceledRequest request, CancellationToken ct) =>
+{
+    var auth = await RunnerHmacValidator.ValidateAsync(http, appStore, null, ct);
+    if (!auth.IsValid) return auth.Failure!;
+
+    var (error, jobDto, runnerDto, logDto) = await appStore.WriteAsync(state =>
+    {
+        var job = state.Jobs.FirstOrDefault(j => j.Id == jobId);
+        if (job is null) return (Results.NotFound() as IResult, (JobDto?)null, (RunnerDto?)null, (JobLogDto?)null);
+        if (job.AgentId != auth.AgentId) return (Results.Forbid() as IResult, (JobDto?)null, (RunnerDto?)null, (JobLogDto?)null);
+
+        var now = DateTimeOffset.UtcNow;
+        job.CancelRequested = true;
+        job.Status = JobStatus.Canceled;
+        job.FinishedAt = now;
+        job.DurationMs = job.StartedAt.HasValue ? (long)(now - job.StartedAt.Value).TotalMilliseconds : null;
+        job.ResultSummary = string.IsNullOrWhiteSpace(request.Reason) ? "Canceled" : request.Reason;
+
+        foreach (var step in state.JobSteps.Where(s => s.JobId == jobId))
+        {
+            if (step.Status is StepStatus.Pending or StepStatus.Running)
+            {
+                step.Status = StepStatus.Canceled;
+                step.FinishedAt ??= now;
+            }
+        }
+
+        var log = new JobLogEntity
+        {
+            Id = state.NextJobLogId++,
+            JobId = jobId,
+            Timestamp = now,
+            Level = LogLevelKind.Warning,
+            Message = string.IsNullOrWhiteSpace(request.Reason) ? "Job canceled by runner" : request.Reason!
         };
         state.JobLogs.Add(log);
 

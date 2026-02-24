@@ -98,6 +98,20 @@ public sealed class OrchestratorClient(HttpClient httpClient, IOptions<RunnerOpt
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<JobCancelStatusDto> GetCancelStatusAsync(RunnerCredentials credentials, Guid jobId, CancellationToken ct)
+    {
+        var path = $"/api/jobs/{jobId}/cancel-status";
+        var request = CreateSignedRequest(HttpMethod.Get, path, credentials.AgentId, credentials.AgentSecret);
+        var response = await httpClient.SendAsync(request, ct);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            throw new UnauthorizedAccessException("Runner cancel-status unauthorized.");
+        }
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<JobCancelStatusDto>(_json, ct))
+            ?? throw new InvalidOperationException("Cancel status payload was empty.");
+    }
+
     public async Task CompleteJobAsync(RunnerCredentials credentials, Guid jobId, string? resultSummary, CancellationToken ct)
     {
         var path = $"/api/jobs/{jobId}/complete";
@@ -111,6 +125,23 @@ public sealed class OrchestratorClient(HttpClient httpClient, IOptions<RunnerOpt
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
             throw new UnauthorizedAccessException("Runner complete unauthorized.");
+        }
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task CancelJobAsync(RunnerCredentials credentials, Guid jobId, string? reason, CancellationToken ct)
+    {
+        var path = $"/api/jobs/{jobId}/canceled";
+        var request = CreateSignedJsonRequest(
+            HttpMethod.Post,
+            path,
+            credentials.AgentId,
+            credentials.AgentSecret,
+            new JobCanceledRequest { Reason = reason });
+        var response = await httpClient.SendAsync(request, ct);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            throw new UnauthorizedAccessException("Runner canceled unauthorized.");
         }
         response.EnsureSuccessStatusCode();
     }
