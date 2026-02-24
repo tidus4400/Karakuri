@@ -1,0 +1,9 @@
+.git
+.gitignore
+**/bin/
+**/obj/
+**/TestResults/
+**/.DS_Store
+docker-compose*.yml
+README.md
+CONTEXT_RESUME.md

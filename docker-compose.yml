@@ -20,7 +20,7 @@ services:
   orchestrator:
     container_name: automationplatform-orchestrator
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile.orchestrator
     restart: unless-stopped
     environment:
@@ -39,7 +39,7 @@ services:
   web:
     container_name: automationplatform-web
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile.web
     restart: unless-stopped
     environment:
@@ -55,7 +55,7 @@ services:
   runner:
     container_name: automationplatform-runner
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile.runner
     restart: unless-stopped
     environment:

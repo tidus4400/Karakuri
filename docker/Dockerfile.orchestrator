@@ -1,0 +1,20 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY ["AutomationPlatform.sln", "./"]
+COPY ["src/AutomationPlatform.Shared/AutomationPlatform.Shared.csproj", "src/AutomationPlatform.Shared/"]
+COPY ["src/AutomationPlatform.Orchestrator/AutomationPlatform.Orchestrator.csproj", "src/AutomationPlatform.Orchestrator/"]
+RUN dotnet restore "src/AutomationPlatform.Orchestrator/AutomationPlatform.Orchestrator.csproj"
+
+COPY . .
+RUN dotnet publish "src/AutomationPlatform.Orchestrator/AutomationPlatform.Orchestrator.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+WORKDIR /app
+
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+COPY --from=build /app/publish .
+
+ENTRYPOINT ["dotnet", "AutomationPlatform.Orchestrator.dll"]

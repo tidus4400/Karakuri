@@ -40,6 +40,32 @@ On first run the orchestrator seeds:
 - Admin: `admin@local` / `Admin123!`
 - User: `user@local` / `User123!`
 
+## Docker quick start (full stack)
+
+From the repo root, bring up PostgreSQL + Orchestrator + Web + Runner containers:
+
+```bash
+cd /Users/tidus4400/Projects/Karakuri
+docker-compose up --build
+```
+
+Also supported (same stack definition under `/docker`):
+
+```bash
+cd /Users/tidus4400/Projects/Karakuri
+docker compose -f /Users/tidus4400/Projects/Karakuri/docker/docker-compose.yml up --build
+```
+
+URLs:
+- Web UI: `http://localhost:5020`
+- Orchestrator health: `http://localhost:5010/api/health`
+- PostgreSQL: `localhost:5432`
+
+Notes:
+- The orchestrator uses PostgreSQL for Identity/auth and a mounted JSON file volume for flow/job/runner domain data (`/data/store.json`).
+- The current `AutomationPlatform.Runner` project in this repo is still the template worker (it starts in Docker but does not yet implement the runner-agent registration/pull protocol described in the target spec).
+- If you only want the usable services right now: `docker-compose up postgres orchestrator web`
+
 ## 1. Start DB (PostgreSQL target)
 
 A PostgreSQL compose file is included (target architecture for later DB-backed persistence):
